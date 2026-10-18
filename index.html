@@ -160,6 +160,10 @@ input[type=file] { font: 14px var(--body); color: var(--ink); max-width: 100%; }
 ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
 .snap { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
 .snap label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+.semana-h { font: 700 15px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 6px; }
+.msg { white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.45 var(--body); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; }
+.msgliga { margin-top: 10px; }
+.msgliga-h { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; font: 700 15px var(--display); text-transform: uppercase; letter-spacing: .03em; }
 @media (prefers-reduced-motion: no-preference) { .card { animation: in .25s ease both; } @keyframes in { from { transform: translateY(4px); opacity: .6; } } }
 </style>
 </head>
@@ -202,12 +206,12 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
     <label id="box-outros" style="display:flex;gap:8px;align-items:flex-start;font-size:14px"><input id="outros" type="checkbox" checked> <span>Incluir outros avisos de escalação: spot vazio, titular de bye, titular sem time e titular <b>não franchise</b> com OUT, IR, DOUB, SUS, NA ou DNR (não contam para WO)</span></label>
     <div id="snapbox" class="snap" hidden>
       <label><input id="usarSnap" type="checkbox"> <span id="snapTxt"></span></label>
-      <div class="hint">Use na conferência depois que os jogos começam: o status de cada jogador volta a ser o da varredura oficial guardada neste aparelho, então quem ficou OUT depois dela continua contando.</div>
+      <div class="hint">Use na conferência depois que os jogos começam: o status de cada jogador volta a ser o da varredura oficial (a da planilha ou a deste aparelho), então quem ficou OUT depois dela continua contando.</div>
     </div>
     <label id="box-banco" class="op"><input id="banco" type="checkbox" checked> <span>Reservas fortes (só comissários): aponta até 3 por time, aptos e com média pelo menos
       <select id="margemBanco" aria-label="Diferença mínima de média"><option value="5">5</option><option value="8" selected>8</option><option value="10">10</option></select>
       pontos maior que um titular da mesma posição (pontos da própria liga, mínimo 2 jogos). Ficam guardados na varredura oficial e, se continuarem no banco, aparecem na conferência de terça. Não entra na mensagem do grupo.</span></label>
-    <div id="box-terca" class="hint" hidden>Confere a escalação final da semana. Os status usados são os da <b>varredura oficial</b> guardada neste aparelho: a de quinta à tarde para os jogos antecipados e a de sábado à noite para os demais. Quem ficar abaixo do mínimo toma W.O.; o resto aparece só como alerta para os comissários analisarem escalação irregular. 🔍 marca o time que deixou no banco um reserva forte apontado na varredura oficial.</div>
+    <div id="box-terca" class="hint" hidden>Confere a escalação final da semana. Os status usados são os da <b>varredura oficial</b> (a da planilha ou a deste aparelho): a de quinta à tarde para os jogos antecipados e a de sábado à noite para os demais. Quem ficar abaixo do mínimo toma W.O.; o resto aparece só como alerta para os comissários analisarem escalação irregular. 🔍 marca o time que deixou no banco um reserva forte apontado na varredura oficial.</div>
     <div id="box-draft" class="meus" hidden>
       <label class="f">Temporada encerrada <input id="temporada" type="number" min="2020" max="2100" value="2026"></label>
       <label class="f">Planilha de WO (opcional) <input id="planilha" type="file" accept=".xlsx,.xls"></label>
@@ -239,6 +243,23 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
         <button id="rodarPessoal" class="btn" type="button">Revisar meus times</button>
         <span id="statusPessoal" class="status" role="status" aria-live="polite"></span>
       </div>
+    </div>
+    <div id="painel-oficiais" class="meus" hidden>
+      <div id="oficiaisEstado" class="hint"></div>
+      <div id="oficiaisSenha" class="toolbar" hidden><input id="senhaOf" type="password" autocomplete="current-password" aria-label="Senha dos comissários" class="txt"><button id="entrarOf" class="btn" type="button">Liberar a planilha</button></div>
+      <label class="f">Seu nome (fica em "guardada por") <input id="nomeOf" type="text" class="txt" autocomplete="off" spellcheck="false"></label>
+      <div class="toolbar">
+        <button id="atualizarOf" class="btn" type="button">Atualizar a lista</button>
+        <button id="enviarOf" class="btn ghost" type="button" hidden>Mandar as deste aparelho para a planilha</button>
+        <span id="statusOf" class="status" role="status" aria-live="polite"></span>
+      </div>
+      <details id="cfgOf" class="cal">
+        <summary>Link da planilha neste aparelho</summary>
+        <div class="cal-body">
+          <div class="hint">Cole o link do app da Web da planilha (termina em /exec). Quando o link ficar fixo no site, não precisa mais.</div>
+          <div class="toolbar"><input id="urlOf" type="url" class="txt" style="width:min(420px,100%)" autocomplete="off" spellcheck="false" aria-label="Link da planilha"><button id="salvarUrlOf" class="btn ghost" type="button">Salvar link</button></div>
+        </div>
+      </details>
     </div>
     <div id="box-rodar" class="toolbar">
       <button id="rodar" class="btn" type="button">Fazer varredura</button>
@@ -278,6 +299,7 @@ const GRUPOS = [
   { id: "cap",   nome: "Cap e AFC/NFC",          nota: "Mínimo de 6 franchises nas duas ligas. O draft usa a mesma regra das BFA (punições digitadas na tabela).", restrito: true },
   { id: "hp",    nome: "Sonserina e Lufa Lufa",  nota: "Ligas de 16 times (só NFC na Sonserina, só AFC na Lufa Lufa): mínimo de 8 franchises e defesa titular em uma das 4 formações (4-3, 4-4, 3-4 ou 3-3-5). Posições do FBB (Fantasy Black Belt, o site oficial da liga) congeladas em 18/10/2026: os híbridos DE/LB, DE/DT, CB/S e LB/S valem as duas posições.", restrito: true },
   { id: "ricos", nome: "Franchise Ricos",        nota: "Liga em que o Trajano auxilia. Mínimo de 7 franchises.", restrito: true },
+  { id: "oficiais", nome: "Varreduras oficiais",  nota: "Toda varredura marcada como oficial fica guardada aqui, semana por semana, com a mensagem de cada liga. Com a planilha ligada, todo comissário vê as mesmas, em qualquer aparelho, e a conferência de terça usa a daqui.", restrito: true },
   { id: "meus",  nome: "Meus times",             nota: "Todas as ligas da temporada de um usuário do Sleeper, sem entrar uma por uma: titulares de bye, sem time, OUT, DOUB, IR, SUS, NA ou DNR e spots vazios. Usa a semana e o calendário escolhidos acima." },
   { id: "pessoal", nome: "Meu painel",            nota: "Só seu: revisa os seus times em todas as ligas, confere as franchises nas suas ligas franchise e aponta reservas fortes no banco.", restrito: true, pessoal: true },
   { id: "comissario", nome: "Comissário",       nota: "", soTravado: true },
@@ -357,6 +379,7 @@ function desenharAbas() {
     b.setAttribute("aria-selected", st.grupo === g.id);
     b.textContent = n ? g.nome + " · " + n + (n > 1 ? " ligas" : " liga") : g.nome;
     b.addEventListener("click", () => { st.grupo = g.id; desenharAbas(); desenharLigas(); redesenhar(); $("status").textContent = "";
+      if (g.id === "oficiais") carregarListaOficial(true);
       if (g.soTravado) setTimeout(() => $("senha").focus(), 0); });
     box.appendChild(b);
   });
@@ -368,6 +391,7 @@ const travadoAgora = g => !!g.soTravado || (!!g.restrito && !liberado()) || (!!g
 function redesenhar() {
   const r = st.res[st.grupo];
   const g = GRUPOS.find(x => x.id === st.grupo);
+  if (st.grupo === "oficiais" && !travadoAgora(g)) { desenharOficiais(); return; }
   if (!r || travadoAgora(g)) { $("resultado").textContent = ""; return; }
   if (st.grupo === "meus") desenharMeus(r);
   else if (st.grupo === "pessoal") desenharPessoal(r);
@@ -394,10 +418,12 @@ function setSemana(w) {
   st.semana = w; $("semana").value = w; st.cal = calendarioDaSemana(w); desenharTimes(); atualizarSnapBox();
 }
 function atualizarSnapBox() {
-  const s = armazenar.get("bfa-snap-" + st.semana + "-" + st.modo);
   const g = GRUPOS.find(x => x.id === st.grupo);
-  $("snapbox").hidden = !s || st.grupo === "meus" || st.grupo === "pessoal" || travadoAgora(g) || !(st.modo === "early" || st.modo === "dom");
-  if (s) $("snapTxt").textContent = "Conferência: usar o status da varredura de " + s.quando;
+  const loc = lerLocal(st.semana, st.modo, st.grupo);
+  const rem = (st.listaOficial || []).find(x => x.id === idOficial(temporadaAtual(), st.semana, st.modo, st.grupo));
+  const s = rem && (!loc || String(loc.salvoEm || "") <= String(rem.salvoEm || "")) ? rem : loc;
+  $("snapbox").hidden = !s || st.grupo === "meus" || st.grupo === "pessoal" || st.grupo === "oficiais" || travadoAgora(g) || !(st.modo === "early" || st.modo === "dom");
+  if (s) $("snapTxt").textContent = "Conferência: usar o status da varredura oficial de " + s.quando + (s === rem ? " (planilha)" : " (este aparelho)");
   else $("usarSnap").checked = false;
 }
 
@@ -596,13 +622,12 @@ function desenharResultado(resultados, ctx) {
   const fb = el("span", { class: "copied" });
   const bTudo = el("button", { class: "btn ghost", type: "button" }, resultados.length > 1 ? "Copiar todas desta aba" : "Copiar mensagem");
   bTudo.addEventListener("click", () => copiar(tudo, fb));
-  let bOficial = null;
-  if (st.ultimoSnap) {
-    bOficial = el("button", { class: "btn ghost", type: "button" }, "Marcar como varredura oficial");
-    bOficial.addEventListener("click", () => {
-      armazenar.set(st.ultimoSnap.key, st.ultimoSnap.valor); atualizarSnapBox();
-      bOficial.textContent = "Varredura oficial guardada ✓"; bOficial.disabled = true;
-    });
+  let bOficial = null, msgOficial = null;
+  if (ctx.oficial) {
+    msgOficial = el("span", { class: "status", role: "status" });
+    bOficial = el("button", { class: "btn ghost", type: "button" }, ctx.oficialFeita || "Marcar como varredura oficial");
+    bOficial.disabled = !!ctx.oficialFeita;
+    bOficial.addEventListener("click", () => marcarOficial(ctx, bOficial, msgOficial));
   }
   const filtro = st.filtro[st.grupo] || null;
   if (resultados.length > 1) {
@@ -629,7 +654,7 @@ function desenharResultado(resultados, ctx) {
     el("span", { class: "pill wo", text: totAbaixo + " abaixo do mínimo" }),
     el("span", { class: "pill warn", text: totAlerta + " com franchise irregular" }),
     comFormacao ? el("span", { class: "pill warn", text: totForm + " fora da formação" }) : null,
-    bTudo, bBanco, bOficial, fb));
+    bTudo, bBanco, bOficial, fb, msgOficial));
   for (const r of resultados) {
     if (filtro && r.liga.id !== filtro) continue;
     const abaixo = r.times.filter(t => t.abaixo), alerta = r.times.filter(t => !t.abaixo && t.irregular);
@@ -1076,13 +1101,233 @@ async function entrar() {
   try { h = await sha256($("senha").value.trim()); } catch (e) { $("senhaMsg").textContent = "Este navegador não conseguiu conferir a senha."; return; }
   if (h === SENHA_SHA256 || h === SENHA_PESSOAL_SHA256) {
     armazenar.set("bfa-liberado", SENHA_SHA256); if (h === SENHA_PESSOAL_SHA256) armazenar.set("bfa-pessoal", h);
+    armazenar.set("bfa-chave", await chaveDaSenha($("senha").value.trim()));
     $("senha").value = ""; $("senhaMsg").textContent = "";
+    carregarListaOficial(true);
     st.grupo = h === SENHA_PESSOAL_SHA256 ? "pessoal" : "bfa"; desenharAbas(); desenharLigas(); redesenhar();
   } else { $("senhaMsg").textContent = "Senha errada."; }
 }
 function bloquear() {
-  try { localStorage.removeItem("bfa-liberado"); localStorage.removeItem("bfa-pessoal"); } catch (e) {}
+  try { localStorage.removeItem("bfa-liberado"); localStorage.removeItem("bfa-pessoal"); localStorage.removeItem("bfa-chave"); } catch (e) {}
+  st.listaOficial = null;
   st.grupo = "meus"; desenharAbas(); desenharLigas(); redesenhar();
+}
+
+// ---------------------------------------------------------------- varreduras oficiais (planilha compartilhada + aparelho)
+// Link do app da Web da planilha "Varreduras oficiais BFA" (Apps Script). Vazio = cada aparelho guarda só as suas.
+const PLANILHA_URL = "";
+const urlPlanilha = () => armazenar.get("bfa-planilha-url") || PLANILHA_URL;
+const chaveGravacao = () => armazenar.get("bfa-chave");
+const chaveDaSenha = senha => sha256("varreduras-bfa|" + senha);   // a planilha confere esta chave, não a senha
+const nomeComissario = () => armazenar.get("bfa-nome") || armazenar.get("bfa-usuario") || "";
+const MODO_NOME = { early: "Quinta · jogos antecipados", dom: "Sábado · demais jogos" };
+const idOficial = (temporada, semana, modo, grupo) => temporada + "-s" + semana + "-" + modo + "-" + grupo;
+function temporadaAtual() { if (st.temporada) return st.temporada; const d = new Date(); return d.getMonth() < 2 ? d.getFullYear() - 1 : d.getFullYear(); }
+async function planilha(acao, dados) {
+  const url = urlPlanilha(); if (!url) throw new Error("planilha não ligada");
+  const chave = chaveGravacao(); if (!chave) throw new Error("senha");
+  let r;
+  // corpo em texto simples: o navegador manda sem pedir licença antes (o Apps Script não responde a isso)
+  try { r = await fetch(url, { method: "POST", body: JSON.stringify(Object.assign({ acao, chave }, dados || {})) }); }
+  catch (e) { throw new Error("a planilha não respondeu"); }
+  if (!r.ok) throw new Error("a planilha respondeu " + r.status);
+  let j; try { j = await r.json(); } catch (e) { throw new Error("o link não é o da planilha (confira o /exec)"); }
+  if (!j.ok) throw new Error(j.erro || "erro na planilha");
+  return j;
+}
+// cópia no aparelho: uma por semana, tipo e aba do site (bfa-snap-6-dom-bfa); guarda as 24 mais recentes
+function lerLocal(semana, modo, grupo) {
+  const r = armazenar.get("bfa-snap-" + semana + "-" + modo + "-" + grupo);
+  if (r) return r;
+  const ant = armazenar.get("bfa-snap-" + semana + "-" + modo);   // formato antigo, de antes das abas separadas
+  return ant ? Object.assign({ semana, modo, legado: true }, ant) : null;
+}
+function grupoDoLegado(r) { const id = Object.keys((r && r.flag) || {})[0]; const l = LIGAS.find(x => x.id === id); return l ? l.grupo : "bfa"; }
+function locais() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i); const m = k && k.match(/^bfa-snap-(\d+)-(early|dom)(?:-([a-z]+))?$/); if (!m) continue;
+      const r = armazenar.get(k); if (!r) continue;
+      const base = { semana: +m[1], modo: m[2], grupo: m[3] || grupoDoLegado(r), temporada: temporadaAtual() };
+      const reg = Object.assign(base, r, { chaveLocal: k, legado: !m[3] });
+      if (!reg.id) reg.id = idOficial(reg.temporada, reg.semana, reg.modo, reg.grupo);
+      out.push(reg);
+    }
+  } catch (e) {}
+  return out;
+}
+function guardarLocal(reg) {
+  const k = "bfa-snap-" + reg.semana + "-" + reg.modo + "-" + reg.grupo;
+  const tenta = () => { try { localStorage.setItem(k, JSON.stringify(reg)); return true; } catch (e) { return false; } };
+  const podar = n => {
+    const ls = locais().filter(x => x.chaveLocal !== k).sort((a, b) => String(a.salvoEm || "").localeCompare(String(b.salvoEm || "")));
+    ls.slice(0, Math.max(0, ls.length - n)).forEach(x => { try { localStorage.removeItem(x.chaveLocal); } catch (e) {} });
+  };
+  podar(23);
+  if (!tenta()) { podar(5); tenta(); }
+}
+// a varredura oficial de uma semana: a da planilha (todo comissário vê) ou a deste aparelho, a mais nova das duas
+async function snapOficial(semana, modo, grupo) {
+  const loc = lerLocal(semana, modo, grupo);
+  let rem = null, erro = null;
+  if (urlPlanilha()) {
+    if (!chaveGravacao()) erro = "falta a senha neste aparelho, na aba Varreduras oficiais";
+    else {
+      try { rem = (await planilha("ler", { id: idOficial(temporadaAtual(), semana, modo, grupo) })).registro; }
+      catch (e) { if (e.message !== "não achei") erro = e.message; }
+    }
+  }
+  const usa = rem && loc && String(loc.salvoEm || "") > String(rem.salvoEm || "") ? loc : (rem || loc);
+  return { snap: usa ? Object.assign({}, usa, { fonte: usa === rem ? "planilha" : "este aparelho" }) : null, erro };
+}
+async function carregarListaOficial(forcar) {
+  if (!urlPlanilha() || !chaveGravacao() || !liberado()) { st.listaOficial = null; if (st.grupo === "oficiais") redesenhar(); return; }
+  if (st.listaOficial && !forcar) return;
+  st.carregandoLista = true; if (st.grupo === "oficiais") { estadoOficiais(); }
+  try { st.listaOficial = (await planilha("lista")).lista; st.erroLista = null; }
+  catch (e) { st.listaOficial = null; st.erroLista = e.message; }
+  st.carregandoLista = false;
+  atualizarSnapBox();
+  if (st.grupo === "oficiais") { estadoOficiais(); redesenhar(); }
+}
+async function marcarOficial(ctx, b, msg) {
+  const reg = Object.assign({}, ctx.oficial, { salvoEm: new Date().toISOString(), quem: nomeComissario() });
+  guardarLocal(reg); atualizarSnapBox();
+  b.disabled = true; msg.textContent = ""; msg.className = "status";
+  if (!urlPlanilha()) { b.textContent = ctx.oficialFeita = "Varredura oficial guardada ✓"; return; }
+  b.textContent = "Guardando na planilha…";
+  try {
+    await planilha("salvar", { registro: reg });
+    b.textContent = ctx.oficialFeita = "Varredura oficial guardada na planilha ✓";
+    carregarListaOficial(true);
+  } catch (e) {
+    b.disabled = false; b.textContent = "Mandar para a planilha de novo"; msg.className = "status err";
+    msg.textContent = e.message === "senha" ? "Ficou só neste aparelho: digite a senha na aba Varreduras oficiais para mandar para a planilha."
+      : "Ficou só neste aparelho (" + e.message + ").";
+  }
+}
+async function liberarPlanilha() {
+  const v = $("senhaOf").value.trim(); let h = "";
+  try { h = await sha256(v); } catch (e) {}
+  if (h !== SENHA_SHA256 && h !== SENHA_PESSOAL_SHA256) { $("statusOf").textContent = "Senha errada."; $("statusOf").className = "status err"; return; }
+  armazenar.set("bfa-chave", await chaveDaSenha(v)); $("senhaOf").value = ""; $("statusOf").textContent = ""; $("statusOf").className = "status";
+  estadoOficiais(); carregarListaOficial(true);
+}
+// o que está neste aparelho e ainda não está na planilha (ou está mais velho lá)
+function pendentesLocais() {
+  if (!st.listaOficial) return [];
+  const rem = Object.fromEntries(st.listaOficial.map(x => [x.id, x]));
+  return locais().filter(l => !rem[l.id] || (l.salvoEm && String(l.salvoEm) > String(rem[l.id].salvoEm || "")));
+}
+async function enviarLocais() {
+  const ls = pendentesLocais(); const msg = $("statusOf");
+  let n = 0; msg.className = "status";
+  for (const l of ls) {
+    const gN = GRUPOS.find(x => x.id === l.grupo);
+    const reg = { v: 1, id: l.id, temporada: l.temporada, semana: l.semana, modo: l.modo, grupo: l.grupo, grupoNome: l.grupoNome || (gN ? gN.nome : l.grupo),
+      quando: l.quando || "", salvoEm: l.salvoEm || new Date().toISOString(), quem: l.quem || nomeComissario(), s: l.s || {}, flag: l.flag || {}, reservas: l.reservas || null, ligas: l.ligas || [] };
+    msg.textContent = "Mandando " + (n + 1) + "/" + ls.length + "…";
+    try { await planilha("salvar", { registro: reg }); n++; }
+    catch (e) { msg.className = "status err"; msg.textContent = "Parei na " + (n + 1) + "ª: " + e.message + "."; carregarListaOficial(true); return; }
+  }
+  msg.textContent = n ? "Mandei " + n + (n > 1 ? " varreduras" : " varredura") + " para a planilha ✓" : "Nada para mandar.";
+  carregarListaOficial(true);
+}
+function estadoOficiais() {
+  const url = urlPlanilha(), chave = chaveGravacao();
+  let t;
+  if (!url) t = "A planilha ainda não está ligada: por enquanto cada aparelho guarda as suas varreduras oficiais (as deste aparelho aparecem aqui embaixo).";
+  else if (!chave) t = "A planilha está ligada. Para ler e gravar nela, digite a senha dos comissários uma vez neste aparelho.";
+  else if (st.carregandoLista) t = "Lendo a planilha…";
+  else if (st.erroLista) t = "Não consegui ler a planilha: " + st.erroLista + ". Aparecem só as deste aparelho.";
+  else t = "Planilha ligada ✓ Todo comissário vê as mesmas varreduras, em qualquer aparelho.";
+  $("oficiaisEstado").textContent = t;
+  $("oficiaisSenha").hidden = !url || !!chave;
+  $("enviarOf").hidden = !(url && chave && pendentesLocais().length);
+  if (!$("nomeOf").value) $("nomeOf").value = nomeComissario();
+  if (document.activeElement !== $("urlOf")) $("urlOf").value = armazenar.get("bfa-planilha-url") || "";
+  $("cfgOf").hidden = !!PLANILHA_URL && !armazenar.get("bfa-planilha-url");
+}
+// lista de semanas: o que está na planilha mais o que só está neste aparelho
+function listaOficiais() {
+  const porId = {};
+  (st.listaOficial || []).forEach(x => { porId[x.id] = Object.assign({}, x, { fonte: "planilha" }); });
+  locais().forEach(l => {
+    const r = porId[l.id];
+    if (!r) porId[l.id] = Object.assign({}, l, { fonte: "este aparelho" });
+    else r.local = l;
+  });
+  const ordG = g => { const i = GRUPOS.findIndex(x => x.id === g); return i < 0 ? 99 : i; };
+  return Object.values(porId).sort((a, b) => (b.temporada - a.temporada) || (b.semana - a.semana) || ((a.modo === "dom" ? 0 : 1) - (b.modo === "dom" ? 0 : 1)) || (ordG(a.grupo) - ordG(b.grupo)));
+}
+function resumoOficial(x) {
+  if (x.ligas) return x.ligas.map(l => ({ nome: l.nome, abaixo: l.abaixo || 0, irregular: l.irregular || 0, fora: l.fora || 0 }));
+  if (!x.resumo) return null;
+  return x.resumo.split(" | ").map(p => { const m = p.match(/^(.*): (\d+) abaixo, (\d+) irregular(?:, (\d+) fora da formação)?$/);
+    return m ? { nome: m[1], abaixo: +m[2], irregular: +m[3], fora: +(m[4] || 0) } : null; }).filter(Boolean);
+}
+async function abrirOficial(x, alvo, botao) {
+  botao.disabled = true;
+  try {
+    let reg = x.ligas ? x : (x.local && x.local.ligas && x.local.salvoEm === x.salvoEm ? x.local : null);
+    if (!reg) { botao.textContent = "Lendo…"; reg = (st.cacheOficial = st.cacheOficial || {})[x.id] || (await planilha("ler", { id: x.id })).registro; st.cacheOficial[x.id] = reg; }
+    alvo.textContent = "";
+    const ligas = (reg.ligas || []).filter(l => l.texto);
+    if (!ligas.length) { alvo.appendChild(el("p", { class: "hint", text: "Esta foi guardada antes das mensagens irem junto: tem só os status e os avisos que a terça usa." })); botao.remove(); return; }
+    const fb = el("span", { class: "copied" });
+    const bTodas = el("button", { class: "btn ghost", type: "button" }, ligas.length > 1 ? "Copiar todas" : "Copiar mensagem");
+    bTodas.addEventListener("click", () => copiar(ligas.map(l => l.texto).join("\n\n"), fb));
+    alvo.appendChild(el("div", { class: "toolbar" }, bTodas, fb));
+    ligas.forEach(l => {
+      const fb2 = el("span", { class: "copied" });
+      const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar");
+      bc.addEventListener("click", () => copiar(l.texto, fb2));
+      alvo.appendChild(el("div", { class: "msgliga" }, el("div", { class: "msgliga-h" }, el("span", { text: l.nome }), el("span", { class: "toolbar" }, bc, fb2)),
+        el("pre", { class: "msg", text: l.texto })));
+    });
+    botao.remove();
+  } catch (e) {
+    botao.disabled = false; botao.textContent = "Ver mensagens";
+    alvo.textContent = ""; alvo.appendChild(el("p", { class: "status err", text: "Não consegui abrir: " + e.message + "." }));
+  }
+}
+function desenharOficiais() {
+  const box = $("resultado"); box.textContent = "";
+  const lista = listaOficiais();
+  if (!lista.length) {
+    box.appendChild(el("p", { class: "hint", text: st.carregandoLista ? "Lendo a planilha…" : "Nenhuma varredura oficial guardada ainda. Depois de fazer a varredura de quinta ou de sábado, toque em \"Marcar como varredura oficial\"." }));
+    return;
+  }
+  let semAtual = null;
+  for (const x of lista) {
+    const sem = x.temporada + "-" + x.semana;
+    if (sem !== semAtual) { semAtual = sem; box.appendChild(el("h3", { class: "semana-h", text: "Semana " + x.semana + " · " + x.temporada })); }
+    const g = GRUPOS.find(y => y.id === x.grupo);
+    const res = resumoOficial(x);
+    const tot = res ? res.reduce((a, l) => ({ ab: a.ab + l.abaixo, ir: a.ir + l.irregular, fo: a.fo + l.fora }), { ab: 0, ir: 0, fo: 0 }) : null;
+    const alvo = el("div");
+    const bVer = el("button", { class: "btn ghost", type: "button" }, "Ver mensagens");
+    bVer.addEventListener("click", () => abrirOficial(x, alvo, bVer));
+    const head = el("div", { class: "card-h" },
+      el("div", {}, el("h2", { text: (g ? g.nome : x.grupoNome || x.grupo) + " · " + (MODO_NOME[x.modo] || x.modo) }),
+        el("div", { class: "toolbar", style: "margin-top:4px" },
+          el("span", { class: "pill " + (x.fonte === "planilha" ? "ok" : "info"), text: x.fonte === "planilha" ? "na planilha" : "só neste aparelho" }),
+          tot ? el("span", { class: "pill " + (tot.ab ? "wo" : "ok"), text: tot.ab + " abaixo" }) : null,
+          tot ? el("span", { class: "pill warn", text: tot.ir + " irregular" }) : null,
+          tot && x.grupo === "hp" ? el("span", { class: "pill warn", text: tot.fo + " fora da formação" }) : null,
+          el("span", { class: "foot", text: "feita em " + (x.quando || "?") + (x.quem ? " · guardada por " + x.quem : "") }))),
+      el("div", { class: "toolbar" }, bVer));
+    const body = el("div", { class: "card-b" });
+    if (res && res.some(l => l.abaixo || l.irregular || l.fora)) {
+      const ul = el("ul", { class: "lst" });
+      res.filter(l => l.abaixo || l.irregular || l.fora).forEach(l => ul.appendChild(el("li", { class: l.abaixo ? "wo" : "warn" },
+        l.nome + ": " + [l.abaixo && l.abaixo + " abaixo do mínimo", l.irregular && l.irregular + " irregular", l.fora && l.fora + " fora da formação"].filter(Boolean).join(", "))));
+      body.appendChild(ul);
+    } else if (res) body.appendChild(el("div", { class: "pill ok", text: "Tudo ok nesta varredura" }));
+    body.appendChild(alvo);
+    box.appendChild(el("article", { class: "card" }, head, body));
+  }
 }
 function aplicarPainel() {
   const g = GRUPOS.find(x => x.id === st.grupo);
@@ -1090,23 +1335,26 @@ function aplicarPainel() {
   const pess = st.grupo === "pessoal";
   const meus = st.grupo === "meus" || pess;
   const m = st.modo, varre = m === "early" || m === "dom";
+  const ofi = st.grupo === "oficiais", nada = meus || ofi;
   const vis = {
     "painel-senha": travado,
-    "box-semana": !travado && (meus || m !== "draft"),
-    "box-modo": !travado && !meus,
-    "box-ligas": !travado && !meus,
-    "box-cal": !travado && (meus || m !== "draft"),
-    "box-outros": !travado && !meus && varre,
-    "box-banco": !travado && !meus && varre,
-    "box-terca": !travado && !meus && m === "terca",
-    "box-draft": !travado && !meus && m === "draft",
+    "box-semana": !travado && !ofi && (meus || m !== "draft"),
+    "box-modo": !travado && !nada,
+    "box-ligas": !travado && !nada,
+    "box-cal": !travado && !ofi && (meus || m !== "draft"),
+    "box-outros": !travado && !nada && varre,
+    "box-banco": !travado && !nada && varre,
+    "box-terca": !travado && !nada && m === "terca",
+    "box-draft": !travado && !nada && m === "draft",
     "painel-meus": !travado && meus && !pess,
     "painel-pessoal": !travado && pess,
-    "box-rodar": !travado && !meus,
+    "painel-oficiais": !travado && ofi,
+    "box-rodar": !travado && !nada,
   };
   for (const [id, v] of Object.entries(vis)) $(id).hidden = !v;
   $("rodar").textContent = { early: "Fazer varredura", dom: "Fazer varredura", terca: "Conferir W.O.", draft: "Calcular draft" }[m];
   $("bloquear").hidden = !liberado();
+  if (ofi && !travado) estadoOficiais();
   atualizarSnapBox();
 }
 
@@ -2717,6 +2965,7 @@ function desenharTerca(resultados, ctx) {
     el("span", { class: "pill info", text: totAl + " times para analisar" }),
     el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, fb));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
+  if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
   if (b3) box.appendChild(el("p", { class: "foot", text: "\"Copiar W.O. para a planilha\" copia Semana, Liga, Time, Tipo e GM: cole na primeira linha vazia da aba Registro, na coluna Semana." }));
   for (const r of resultados) {
     const wo = r.times.filter(t => t.wo), al = r.times.filter(t => t.alertas.length);
@@ -2886,8 +3135,8 @@ async function rodar() {
   status("Fazendo a varredura…");
   try {
     const players = await carregarJogadores(status);
-    const snapKey = "bfa-snap-" + semana + "-" + st.modo;
-    const snap = $("usarSnap").checked ? armazenar.get(snapKey) : null;
+    const modo = st.modo;
+    const snap = $("usarSnap").checked ? (await snapOficial(semana, modo, grupo)).snap : null;
     const statusDe = snap ? (id) => snap.s[id] || null : (id, p) => p.injury_status || null;
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -2911,13 +3160,16 @@ async function rodar() {
       feitas++; status("Lendo ligas… " + feitas + "/" + ligas.length);
     }));
     resultados.sort((a, b) => LIGAS.indexOf(a.liga) - LIGAS.indexOf(b.liga));
-    st.ultimoSnap = null;
     if (!snap) { // status de todos os jogadores com lesão neste momento; vira "oficial" só se o comissário marcar
       const s = {}; for (const [id, p] of Object.entries(players)) if (p && p.injury_status) s[id] = p.injury_status;
       const flag = {}; resultados.forEach(r => { flag[r.liga.id] = r.times.filter(t => t.abaixo || t.irregular).map(t => t.franquia); });
       let reservas = null;
       if (ctx.banco) { reservas = {}; resultados.forEach(r => { const m = {}; r.times.forEach(t => { if (t.reservas && t.reservas.length) m[t.franquia] = t.reservas.map(x => ({ id: x.id, nome: x.nome, media: x.media })); }); reservas[r.liga.id] = m; }); }
-      st.ultimoSnap = { key: snapKey, valor: { quando, s, flag, reservas } };
+      const ligasMsg = resultados.map(r => ({ id: r.liga.id, nome: r.liga.nome, texto: r.erro ? "" : mensagem(r, ctx),
+        abaixo: r.times.filter(t => t.abaixo).length, irregular: r.times.filter(t => !t.abaixo && t.irregular).length, fora: r.times.filter(t => t.foraFormacao).length }));
+      const gN = GRUPOS.find(x => x.id === grupo); const temporada = temporadaAtual();
+      ctx.oficial = { v: 1, id: idOficial(temporada, semana, modo, grupo), temporada, semana, modo, grupo, grupoNome: gN ? gN.nome : grupo,
+        quando, s, flag, reservas, ligas: ligasMsg };
     }
     st.res[grupo] = { tipo: "varredura", resultados, ctx }; st.filtro[grupo] = null;
     if (st.grupo === grupo) desenharResultado(resultados, ctx);
@@ -2931,12 +3183,15 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
   btn.disabled = true; status("Conferindo a rodada…");
   try {
     const players = await carregarJogadores(status);
-    const sE = armazenar.get("bfa-snap-" + semana + "-early"), sD = armazenar.get("bfa-snap-" + semana + "-dom");
+    const [oE, oD] = await Promise.all([snapOficial(semana, "early", grupo), snapOficial(semana, "dom", grupo)]);
+    const sE = oE.snap, sD = oD.snap;
+    const onde = urlPlanilha() ? "(nem na planilha nem neste aparelho)" : "neste aparelho";
     const cal = st.cal;
     const statusDe = (id, p) => { const ant = p && p.team && (cal[p.team] || "normal") === "early"; const snap = ant ? sE : sD; return snap ? (snap.s[id] || null) : ((p && p.injury_status) || null); };
     const avisosSnap = [];
-    if (!sD) avisosSnap.push("Não há varredura oficial de sábado da semana " + semana + " guardada neste aparelho: para os jogos de domingo e segunda foi usado o status atual dos jogadores.");
-    if (!sE && Object.values(cal).includes("early")) avisosSnap.push("Não há varredura oficial de quinta da semana " + semana + " guardada neste aparelho: para os jogos antecipados foi usado o status atual.");
+    if (oD.erro || oE.erro) avisosSnap.push("Não consegui ler a planilha (" + (oD.erro || oE.erro) + "): usei o que está guardado neste aparelho.");
+    if (!sD) avisosSnap.push("Não há varredura oficial de sábado da semana " + semana + " guardada " + onde + ": para os jogos de domingo e segunda foi usado o status atual dos jogadores.");
+    if (!sE && Object.values(cal).includes("early")) avisosSnap.push("Não há varredura oficial de quinta da semana " + semana + " guardada " + onde + ": para os jogos antecipados foi usado o status atual.");
     const flags = {}, reservas = {};
     for (const sn of [sE, sD]) if (sn && sn.flag) for (const [k, v] of Object.entries(sn.flag)) flags[k] = [...(flags[k] || []), ...v];
     for (const sn of [sE, sD]) if (sn && sn.reservas) for (const [lid, porTime] of Object.entries(sn.reservas)) for (const [fq, lst] of Object.entries(porTime))
@@ -2944,7 +3199,8 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
     if (sD && !sD.reservas) avisosSnap.push("A varredura oficial de sábado foi guardada sem a opção de reservas fortes: não há reservas para conferir nesta semana.");
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas };
+    const fontes = [sE && "quinta: varredura oficial de " + sE.quando + " (" + sE.fonte + ")", sD && "sábado: varredura oficial de " + sD.quando + " (" + sD.fonte + ")"].filter(Boolean);
+    const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas, fontes };
     const resultados = []; let feitas = 0;
     await Promise.all(ligas.map(async (liga) => {
       try {
@@ -3008,6 +3264,14 @@ $("semana").addEventListener("change", () => { const w = parseInt($("semana").va
 $("rodar").addEventListener("click", rodar);
 $("rodarMeus").addEventListener("click", rodarMeus);
 $("rodarPessoal").addEventListener("click", rodarPessoal);
+$("atualizarOf").addEventListener("click", () => carregarListaOficial(true));
+$("enviarOf").addEventListener("click", enviarLocais);
+$("entrarOf").addEventListener("click", liberarPlanilha);
+$("senhaOf").addEventListener("keydown", (e) => { if (e.key === "Enter") liberarPlanilha(); });
+$("nomeOf").addEventListener("change", () => armazenar.set("bfa-nome", $("nomeOf").value.trim()));
+$("salvarUrlOf").addEventListener("click", () => { const u = $("urlOf").value.trim();
+  if (u) armazenar.set("bfa-planilha-url", u); else { try { localStorage.removeItem("bfa-planilha-url"); } catch (e) {} }
+  st.listaOficial = null; estadoOficiais(); carregarListaOficial(true); });
 $("usuarioP").addEventListener("keydown", (e) => { if (e.key === "Enter") rodarPessoal(); });
 $("usuario").addEventListener("keydown", (e) => { if (e.key === "Enter") rodarMeus(); });
 { const u = armazenar.get("bfa-usuario"); if (u) $("usuario").value = u; }
@@ -3021,8 +3285,9 @@ $("pEarly").checked = $("meusEarly").checked;
 setSemana(1);
 getJSON("/state/nfl").then(s => {
   const w = parseInt(s.display_week || s.week, 10); if (w >= 1 && w <= 18) setSemana(w);
-  const t = parseInt(s.league_season || s.season, 10); if (t) $("temporada").value = String(t);
+  const t = parseInt(s.league_season || s.season, 10); if (t) { $("temporada").value = String(t); st.temporada = t; atualizarSnapBox(); }
 }).catch(() => {});
+carregarListaOficial();
 </script>
 </body>
 </html>
