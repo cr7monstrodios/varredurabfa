@@ -472,7 +472,7 @@ function avaliarLiga(liga, dados, ctx) {
     let banco = [], reservas = [];
     if (ctx.banco && dados.medias) {
       const noEscopo = p => ctx.modo === "early" ? (ctx.cal[p.team] || "normal") === "early" : (ctx.cal[p.team] || "normal") !== "early";
-      reservas = sugestoesBanco(r, titulares, ctx, dados.medias, noEscopo, sig);
+      reservas = sugestoesBanco(r, titulares, ctx, dados.medias, noEscopo, sig, Math.max(0, validos - liga.min));
       banco = reservas.map(x => x.txt);
     }
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
@@ -732,7 +732,7 @@ async function rodarMeus() {
         else {
           const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
           const titulares = m ? m.starters : (meu.starters || []);
-          const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 && ehLigaFranchise(lg) });
+          const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 });
           const fm = league ? avaliarFormacao(league, titulares, players) : null;
           if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm) });
           resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens });
@@ -887,22 +887,27 @@ async function rodarPessoal() {
     await emLotes(ativas, 5, async (lg) => {
       try {
         const c = cfg[lg.league_id]; const ehFr = conferirFr && c && c.on;
+        const ligaSite = LIGAS.find(l => l.id === lg.league_id);
+        const ehFranq = !!ligaSite || !!(c && (c.on || c.detectada));   // liga franchise: precisa saber a franquia para não sugerir tirar franchise abaixo da folga
+        const minimo = c && c.on ? c.min : ligaSite ? ligaSite.min : c ? c.min : 0;
         const [rosters, matchups, league, users] = await Promise.all([getJSON("/league/" + lg.league_id + "/rosters"),
           getJSON("/league/" + lg.league_id + "/matchups/" + semana).catch(() => []), getJSON("/league/" + lg.league_id).catch(() => null),
-          ehFr ? getJSON("/league/" + lg.league_id + "/users").catch(() => []) : null]);
+          ehFranq ? getJSON("/league/" + lg.league_id + "/users").catch(() => []) : null]);
         const meu = (rosters || []).find(r => r.owner_id === u.user_id || (r.co_owners || []).includes(u.user_id));
         if (!meu) { res.semTime.push(lg.name); return; }
         const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
         const titulares = m ? m.starters : (meu.starters || []);
-        const fq = ehFr ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
-        const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 && (ehFr || ehLigaFranchise(lg)), semStatusDe: fq ? ABBR[fq] : null });
-        const ligaSite = LIGAS.find(l => l.id === lg.league_id);
+        const fq = ehFranq ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
+        const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32, semStatusDe: ehFr && fq ? ABBR[fq] : null });
         if (ligaSite && ligaSite.formacao && league) { const fm = avaliarFormacao(league, titulares, players); if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm), tipo: "warn" }); }
-        let sig = null, fr = null;
+        let sig = fq ? ABBR[fq] : null, fr = null, folga = Infinity;
+        if (sig) {
+          const v = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early"; const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
+          folga = Math.max(0, v - minimo);
+        }
         if (ehFr) {
           if (!fq) itens.unshift({ txt: "NÃO IDENTIFIQUEI A SUA FRANQUIA NESTA LIGA: ESCOLHA EM \"MINHAS LIGAS FRANCHISE\"", tipo: "wo" });
           else {
-            sig = ABBR[fq];
             const daF = titulares.filter(id => players[id] && players[id].team === sig).map(id => {
               const p = players[id]; const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early";
               const s2 = travou ? null : ctx.statusDe(id, p);
@@ -920,7 +925,7 @@ async function rodarPessoal() {
           const ant = await Promise.all(Array.from({ length: semana - 1 }, (_, i) => getJSON("/league/" + lg.league_id + "/matchups/" + (i + 1)).catch(() => [])));
           const medias = mediasDaLiga(ant);
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
-          sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr });
       } catch (e) { res.erros.push(lg.name); }
@@ -1091,7 +1096,8 @@ function mediasDaLiga(semanasMatchups) {
   return med;
 }
 // reservas fortes antes do jogo: jogador apto com média bem maior que um titular da mesma posição (até 3 por time)
-function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig) {
+// folga = quantos franchises dá para tirar sem ficar abaixo do mínimo (0 = nenhum; sem franquia conhecida = Infinity)
+function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0) {
   const margem = ctx.margemBanco || 8;
   const aptos = bancoDoTime(r, titulares).filter(id => {
     const p = ctx.players[id]; if (!p || !p.team || !noEscopo(p)) return false;
@@ -1108,16 +1114,20 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig) {
     let melhor = null;
     for (const bId of aptos) {
       const pB = ctx.players[bId];
-      if (pS.team === sig && pB.team !== sig) continue;   // não sugere tirar franchise para pôr quem não é
+      if (pS.team === sig && pB.team !== sig && !(folga > 0)) continue;   // só tira franchise se estiver acima do mínimo
       if (mesmaPosicao(pB, pS) && medias[bId] >= medias[sId] + margem && (!melhor || medias[bId] > medias[melhor])) melhor = bId;
     }
     if (melhor) pares.push({ b: melhor, s: sId, dif: medias[melhor] - medias[sId] });
   }
   pares.sort((a, b) => b.dif - a.dif);
-  const usados = new Set(), out = [];
+  const usados = new Set(), out = []; let tirados = 0;
   for (const x of pares) {
-    if (usados.has(x.b) || out.length >= 3) continue; usados.add(x.b);
+    if (usados.has(x.b) || out.length >= 3) continue;
     const pB = ctx.players[x.b], pS = ctx.players[x.s];
+    const tiraFranchise = pS.team === sig && pB.team !== sig;
+    if (tiraFranchise && tirados >= folga) continue;
+    if (tiraFranchise) tirados++;
+    usados.add(x.b);
     out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b],
       txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", MÉDIA " + num(medias[x.b]) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + ")" });
   }
