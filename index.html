@@ -2581,7 +2581,11 @@ function descFormacao(fm) {
     // a mesma sobra em todas: diz a sobra uma vez e o que falta em cada formação
     txt = txtSobra(ps[0]) + "; " + (sum(ps[0].faltam) > 1 ? "FALTAM " : "FALTA ") + juntarOu(ps.map(t => contagem(t.faltam) + " PARA A " + t.nome));
   } else {
-    txt = ps.map(t => "PARA A " + t.nome + (tem(t.faltam) ? " " + txtFalta(t) : "") + (tem(t.sobram) ? " E " + txtSobra(t) : "")).join("; OU ");
+    // junta as formações que ficam com a mesma falta e a mesma sobra ("PARA A 4-3 OU 4-4 ...")
+    const grupos = [];
+    ps.forEach(t => { const k = (tem(t.faltam) ? " " + txtFalta(t) : "") + (tem(t.sobram) ? " E " + txtSobra(t) : "");
+      const g = grupos.find(x => x.k === k); if (g) g.nomes.push(t.nome); else grupos.push({ k, nomes: [t.nome] }); });
+    txt = grupos.map(g => "PARA A " + juntarOu(g.nomes) + g.k).join("; OU ");
   }
   return "DEFESA FORA DAS FORMAÇÕES (" + resumoDefesa(fm) + "): " + txt + nota;
 }
