@@ -803,8 +803,8 @@ function desenharMeus(r) {
 const temL = (n, k) => new RegExp("\\bl\\s*" + k + "\\b").test(n);
 const MINHAS_FRANQUIAS = [
   ["Salary Cap", 7, n => /salary/.test(n)],
-  ["Dynast 1", 7, n => /dynast\w*\s*(l\s*)?1\b/.test(n)],
-  ["Dynast 2", 7, n => /dynast\w*\s*(l\s*)?2\b/.test(n)],
+  ["Dynast 2", 7, n => /dynasty franchise/.test(n) && /\(2\)|\b2\b/.test(n.replace(/\(\d\)\s*$/, ""))],
+  ["Dynast 1", 7, n => /dynasty franchise/.test(n)],
   ["NFL Full", 6, n => /nfl\s*full/.test(n)],
   ["FCL", 6, n => /\bfcl\b/.test(n)],
   ["Liga dos Campeões L1", 7, n => /campe/.test(n) && temL(n, 1)],
@@ -826,8 +826,9 @@ const MINHAS_FRANQUIAS = [
   ["Jim Brown", 5, n => /jim\s*brown/.test(n)],
   ["Fanbol", 6, n => /fanbol/.test(n)],
   ["Pick Six", 6, n => /pick\s*(six|6)/.test(n)],
+  ["AFC/NFC", 6, n => /afc\s*\/\s*nfc/.test(n) && !/bfa/.test(n)],
 ];
-const MINHAS_FRANQUIAS_ID = { "1356379850876686336": ["AFC/NFC", 6], "1362854631968903168": ["Franchise Ricos", 7] };
+const MINHAS_FRANQUIAS_ID = { "1362854631968903168": ["Franchise Ricos", 7] };
 function configMinhas(ligas) {
   const salvo = armazenar.get("bfa-minhas-franquias") || {};
   const cfg = {}, usadas = new Set();
