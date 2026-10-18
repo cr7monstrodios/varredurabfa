@@ -2938,6 +2938,34 @@ function textoAlertas(resultados, ctx, titulo) {
   if (!algum) linhas.push("", "Nada para analisar.");
   return linhas.join("\n");
 }
+// W.O. para a aba Registro da planilha (botão "Lançar W.O. no Registro")
+function linhasLancar(resultados) {
+  const out = [];
+  for (const r of resultados) for (const t of r.times) if (t.wo) {
+    const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
+    out.push({ liga: r.liga.nome, time: t.franquia, tipo: "WO", gm: t.gm, escaladas: t.validos,
+      detalhe: (ruins.length ? juntar(ruins) + " NA VARREDURA" : t.validos + " FRANCHISES ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") });
+  }
+  return out;
+}
+async function lancarRegistro(ctx, linhas, b, msg) {
+  if (b.dataset.conf !== "1") {
+    b.dataset.conf = "1"; b.textContent = "Confirmar: lançar " + linhas.length + " W.O. da semana " + ctx.semana + " no Registro";
+    msg.className = "status"; msg.textContent = "Vai escrever na aba Registro da planilha; o que já estiver lá não repete.";
+    return;
+  }
+  b.disabled = true; b.textContent = "Lançando…"; msg.className = "status"; msg.textContent = "";
+  try {
+    const r = await planilha("lancarWO", { semana: ctx.semana, linhas, quem: nomeComissario() });
+    b.textContent = ctx.woLancado = "W.O. lançados no Registro ✓";
+    const ls = r.linhas || [];
+    msg.textContent = r.inseridas + (r.inseridas === 1 ? " linha nova" : " linhas novas") + (ls.length ? " (" + (ls.length > 1 ? "linhas " + ls[0] + " a " + ls[ls.length - 1] : "linha " + ls[0]) + ")" : "") +
+      (r.repetidas ? "; " + r.repetidas + " já " + (r.repetidas > 1 ? "estavam" : "estava") + " lá" : "") + ".";
+  } catch (e) {
+    b.disabled = false; b.dataset.conf = ""; b.textContent = "Lançar " + linhas.length + " W.O. no Registro"; msg.className = "status err";
+    msg.textContent = e.message === "senha" ? "Falta a senha neste aparelho: digite na aba Varreduras oficiais." : "Não consegui lançar: " + e.message + ".";
+  }
+}
 function linhasRegistro(resultados, ctx) {
   const out = [];
   for (const r of resultados) for (const t of r.times) if (t.wo) out.push([ctx.semana, r.liga.nome, t.franquia, "WO", t.gm].join("\t"));
@@ -2959,14 +2987,23 @@ function desenharTerca(resultados, ctx) {
     b3 = el("button", { class: "btn ghost", type: "button" }, "Copiar W.O. para a planilha");
     b3.addEventListener("click", () => copiar(linhasRegistro(naPlanilha, ctx), fb));
   }
+  // com a planilha ligada, os W.O. vão direto para a aba Registro
+  let b4 = null, m4 = null;
+  if (naPlanilha.length && urlPlanilha()) {
+    const linhas = linhasLancar(naPlanilha);
+    m4 = el("span", { class: "status", role: "status" });
+    b4 = el("button", { class: "btn ghost", type: "button" }, ctx.woLancado || (linhas.length ? "Lançar " + linhas.length + " W.O. no Registro" : "Nenhum W.O. para lançar"));
+    b4.disabled = !linhas.length || !!ctx.woLancado;
+    b4.addEventListener("click", () => lancarRegistro(ctx, linhas, b4, m4));
+  }
   box.appendChild(el("div", { class: "summary" },
     el("span", { class: "count", text: "Semana " + ctx.semana }),
     el("span", { class: "pill wo", text: totWO + " W.O." }),
     el("span", { class: "pill info", text: totAl + " times para analisar" }),
-    el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, fb));
+    el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
   if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
-  if (b3) box.appendChild(el("p", { class: "foot", text: "\"Copiar W.O. para a planilha\" copia Semana, Liga, Time, Tipo e GM: cole na primeira linha vazia da aba Registro, na coluna Semana." }));
+  if (b3) box.appendChild(el("p", { class: "foot", text: b4 ? "\"Lançar W.O. no Registro\" escreve direto na aba Registro da planilha (semana, liga, time, tipo, GM, franchises escaladas e o motivo) e não repete o que já estiver lá. \"Copiar W.O. para a planilha\" continua servindo para colar à mão." : "\"Copiar W.O. para a planilha\" copia Semana, Liga, Time, Tipo e GM: cole na primeira linha vazia da aba Registro, na coluna Semana." }));
   for (const r of resultados) {
     const wo = r.times.filter(t => t.wo), al = r.times.filter(t => t.alertas.length);
     const fb2 = el("span", { class: "copied" });
