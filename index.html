@@ -124,6 +124,22 @@ td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .def.ruim { border-color: var(--warn); background: var(--warn-soft); }
 .def-h { font-weight: 600; margin-bottom: 2px; }
 .def-l { color: var(--ink); }
+.ftabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.ftabs.um { grid-template-columns: minmax(0, 300px); }
+@media (max-width: 760px) { .ftabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ftab { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px 5px; background: var(--surface); font-size: 12.5px; line-height: 1.35; min-width: 0; }
+.ftab.ok { border-color: var(--ok); }
+.ftab.perto { border-color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
+.ftab.longe { opacity: .72; }
+.ftab-h { display: flex; justify-content: space-between; gap: 6px; font: 700 14px var(--display); letter-spacing: .03em; margin-bottom: 2px; }
+.ftab.perto .ftab-h span:last-child, .ftab.longe .ftab-h span:last-child { color: var(--warn); }
+.ftab table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ftab td { padding: 1px 2px; vertical-align: top; overflow-wrap: anywhere; }
+.ftab td.fp { width: 3.4em; color: var(--muted); font-weight: 600; }
+.ftab tr.falta td { color: var(--wo); font-weight: 600; }
+.ftab tr.sobra td { color: var(--warn); }
+.ftab tr.sobra:first-of-type td, .ftab tr:not(.sobra) + tr.sobra td { border-top: 1px dashed var(--line); }
+.ftab .cod { color: var(--muted); font-size: 11px; }
 .abas button.chave { font-size: 13px; padding: 6px 10px; border-style: dashed; color: var(--muted); }
 .abas button.chave[aria-selected="true"] { color: #fff; border-style: solid; }
 .navliga { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 5; }
@@ -260,7 +276,7 @@ const LIGAS = [
 const GRUPOS = [
   { id: "bfa",   nome: "BFA",                    nota: "", restrito: true },
   { id: "cap",   nome: "Cap e AFC/NFC",          nota: "Mínimo de 6 franchises nas duas ligas. O draft usa a mesma regra das BFA (punições digitadas na tabela).", restrito: true },
-  { id: "hp",    nome: "Sonserina e Lufa Lufa",  nota: "Ligas de 16 times (só NFC na Sonserina, só AFC na Lufa Lufa): mínimo de 8 franchises e defesa titular em uma das 4 formações (4-3, 4-4, 3-4 ou 3-3-5). Posições do Ourlads congeladas em 17/10/2026; OLB/RUSH e quem é DL/LB no Sleeper valem DE ou LB, nickel vale CB ou S, NT vale DT.", restrito: true },
+  { id: "hp",    nome: "Sonserina e Lufa Lufa",  nota: "Ligas de 16 times (só NFC na Sonserina, só AFC na Lufa Lufa): mínimo de 8 franchises e defesa titular em uma das 4 formações (4-3, 4-4, 3-4 ou 3-3-5). Posições do FBB (Fantasy Black Belt, o site oficial da liga) congeladas em 18/10/2026: os híbridos DE/LB, DE/DT, CB/S e LB/S valem as duas posições.", restrito: true },
   { id: "ricos", nome: "Franchise Ricos",        nota: "Liga em que o Trajano auxilia. Mínimo de 7 franchises.", restrito: true },
   { id: "meus",  nome: "Meus times",             nota: "Todas as ligas da temporada de um usuário do Sleeper, sem entrar uma por uma: titulares de bye, sem time, OUT, DOUB, IR, SUS, NA ou DNR e spots vazios. Usa a semana e o calendário escolhidos acima." },
   { id: "pessoal", nome: "Meu painel",            nota: "Só seu: revisa os seus times em todas as ligas, confere as franchises nas suas ligas franchise e aponta reservas fortes no banco.", restrito: true, pessoal: true },
@@ -533,21 +549,41 @@ async function copiar(texto, alvo) {
   alvo.textContent = ok ? "Copiado ✓" : "Não deu para copiar: selecione o texto manualmente";
   setTimeout(() => { alvo.textContent = ""; }, 2500);
 }
+// uma formação em tabela: cada vaga com o titular que cabe nela (ou "falta") e, embaixo, quem sobra
+function tabelaFormacao(fm, t) {
+  const f = FORMACOES.find(x => x[0] === t.nome)[1];
+  const por = {}; const sobra = [];
+  fm.def.forEach((d, j) => { const p = t.atrib[j]; if (p) (por[p] = por[p] || []).push(d); else sobra.push(d); });
+  const nome = d => el("span", {}, d.curto + marcaFonte(d), d.pos.length > 1 || d.fonte !== "fbb" ? el("span", { class: "cod", text: " " + d.pos.join("/") }) : null);
+  const tb = el("table");
+  POS_DEF.forEach(p => { const ds = por[p] || [];
+    for (let i = 0; i < (f[p] || 0); i++) tb.appendChild(el("tr", ds[i] ? {} : { class: "falta" }, el("td", { class: "fp", text: p }), el("td", {}, ds[i] ? nome(ds[i]) : "— falta"))); });
+  sobra.forEach(d => tb.appendChild(el("tr", { class: "sobra" }, el("td", { class: "fp", text: "sobra" }), el("td", {}, nome(d)))));
+  const fecha = fm.fecham.includes(t.nome); const falt = sum(t.faltam);
+  const classe = fecha ? "ok" : fm.perto.includes(t) ? "perto" : "longe";
+  return el("div", { class: "ftab " + classe }, el("div", { class: "ftab-h" }, el("span", { text: t.nome }),
+    el("span", { text: fecha ? "✅" : (falt > 1 ? "faltam " : "falta ") + falt })), tb);
+}
+// cartão de um time: as 4 formações lado a lado (quem está fora) ou a formação que fecha (quem está certo)
+function cartaoDefesa(t) {
+  const fm = t.formacao;
+  const tabs = el("div", { class: "ftabs" + (fm.ok ? " um" : "") });
+  (fm.ok ? fm.tent.filter(x => x.nome === fm.fecham[0]) : fm.tent).forEach(x => tabs.appendChild(tabelaFormacao(fm, x)));
+  return el("div", { class: "def" + (t.foraFormacao ? " ruim" : "") }, el("div", { class: "def-h", text: linhasDefesa(t)[0] }), tabs);
+}
 function blocoFormacao(r) {
   const wrap = el("div", { class: "formacao" });
-  const fora = r.times.filter(t => t.foraFormacao);
+  const comDef = r.times.filter(t => t.formacao).slice().sort((a, b) => a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
+  const fora = comDef.filter(t => t.foraFormacao), certos = comDef.filter(t => !t.foraFormacao);
   const fb = el("span", { class: "copied" });
   const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar defesas");
   bc.addEventListener("click", () => copiar(textoDefesas(r), fb));
-  wrap.appendChild(el("div", { class: "foot", text: "🛡️ Formação defensiva (posições do Ourlads de " + OURLADS_DATA + ")" }));
-  if (fora.length) { const ul = el("ul", { class: "lst" }); fora.forEach(t => ul.appendChild(el("li", { class: "warn" }, fraseFormacao(t)))); wrap.appendChild(ul); }
-  else wrap.appendChild(el("div", { class: "pill ok", text: "Todas as defesas dentro das formações" }));
-  const lista = el("div", { class: "defs" });
-  r.times.filter(t => t.formacao).slice().sort((a, b) => (b.foraFormacao - a.foraFormacao) || a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" })).forEach(t => {
-    const ls = linhasDefesa(t);
-    lista.appendChild(el("div", { class: "def" + (t.foraFormacao ? " ruim" : "") }, el("div", { class: "def-h", text: ls[0] }),
-      ...ls.slice(1).map(l => el("div", { class: "def-l", text: l }))));
-  });
+  wrap.appendChild(el("div", { class: "foot", text: "🛡️ Formação defensiva (posições do FBB de " + FBB_DATA + ")" }));
+  if (fora.length) {
+    const ul = el("ul", { class: "lst" }); fora.forEach(t => ul.appendChild(el("li", { class: "warn" }, fraseFormacao(t)))); wrap.appendChild(ul);
+    const lf = el("div", { class: "defs fora" }); fora.forEach(t => lf.appendChild(cartaoDefesa(t))); wrap.appendChild(lf);
+  } else wrap.appendChild(el("div", { class: "pill ok", text: "Todas as defesas dentro das formações" }));
+  const lista = el("div", { class: "defs" }); certos.forEach(t => lista.appendChild(cartaoDefesa(t)));
   wrap.appendChild(el("details", { class: "all" }, el("summary", { text: "Ver a defesa de cada time" }),
     el("div", { class: "toolbar", style: "margin:6px 0" }, bc, fb), lista));
   return wrap;
@@ -1135,9 +1171,9 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0) {
 }
 
 // ---------------------------------------------------------------- formação defensiva (Sonserina e Lufa Lufa)
-// Posições do Ourlads congeladas em 17/10/2026 (depth chart dos 32 times; quem não estava no depth chart: elenco do Ourlads).
+// A fonte oficial das posições é o FBB (bloco FBB_TXT, mais abaixo). O Ourlads de 17/10/2026 fica só de reserva,
+// para quem entrar no Sleeper depois e não estiver na lista do FBB.
 // Uma linha por jogador: TIME|Sobrenome, Nome|código do Ourlads|origem (d = depth chart, p = practice squad, r = elenco/reservas).
-// Para atualizar no ano que vem, basta trocar este bloco.
 const OURLADS_DATA = "17/10/2026";
 const OURLADS_TXT = `
 ARI|BAKER, BUDDA|SS|d
@@ -2347,6 +2383,65 @@ WAS|TUTTLE, SHY|NT|d
 WAS|WISE JR., DEATRICH|RDE|d
 WAS|YIADOM, ISAAC|RCB|d
 `;
+// Posições do FBB (Fantasy Black Belt, o site oficial da liga, modo Full IDP) congeladas em 18/10/2026.
+// Uma linha por posição: POSIÇÃO|ids do Sleeper. Híbridos (DE/DT, DE/LB, CB/S, LB/S) valem as duas posições; CB/WR vale CB.
+// Quem não está aqui (entrou depois de 18/10) usa o Ourlads de 17/10 e, se não estiver lá, a posição do Sleeper (marcado com *).
+// Para atualizar no ano que vem, basta trocar este bloco pela lista de jogadores do FBB.
+const FBB_DATA = "18/10/2026";
+const FBB_TXT = `
+DE|125,2033,2064,2311,2993,3218,3256,3281,3295,3526,4174,5816,5861,5871,5934,6124,6784,6792,6795,6818,6887,7018,7283,7301,7344,7629,7649,7664,7693,7696,7727,7817,7840,8001,8265,8270,8274,8289,8295,8316,8331,8336,8370,8376,8380,8385,8391,8495,8520,8526,8540,8746,8914,10872,10874,10879,10904,10909,10924,10934
+DE|10943,10958,10966,10982,10994,11009,11015,11030,11062,11122,11319,11552,11658,11665,11669,11677,11743,11760,11785,11795,11829,11835,11844,11846,12031,12071,12138,12238,12436,12552,12560,12561,12580,12583,12587,12602,12612,12616,12618,12620,12623,12628,12635,12665,12671,12704,12900,12902,12910,13048,13196,13358,13364,13372,13373,13395,13445,13458,13472,13480
+DE|13484,13493,13518,13566,13575,13584,13588,13596,13598,13601,13648,13650,13676,13686,13693,13706,13747,13752,13788,13795,13860,13872,13883,13901,13934,13955,13987,14035,14043
+DT|843,1553,2322,2592,3172,3186,3188,3207,3220,3236,3241,3322,3558,4032,4058,4092,4168,4207,4278,4371,4415,4969,4976,5020,5035,5043,5049,5073,5226,5297,5333,5351,5366,5371,5615,5841,5847,6118,6125,6129,6627,6825,6841,6858,6948,6972,6999,7122,7222,7443,7661,7679,7695,7711,7722,7731,7756,7799,7801,7818
+DT|7833,7844,7853,7880,8262,8269,8273,8306,8332,8342,8344,8347,8360,8375,8400,8473,8492,8654,10877,10888,10899,10901,10916,10925,10941,10952,10957,11035,11240,11328,11338,11345,11396,11436,11668,11688,11691,11692,11695,11698,11699,11706,11713,11736,11740,11796,11798,11799,11804,11811,11819,11827,11923,11930,12282,12319,12554,12564,12573,12581
+DT|12590,12615,12649,12651,12652,12676,12679,12680,12682,12689,12696,12720,12737,12751,12752,12844,12919,12927,12937,13058,13104,13181,13362,13374,13387,13390,13464,13468,13476,13501,13504,13506,13519,13527,13532,13540,13547,13548,13549,13552,13558,13560,13563,13571,13574,13606,13629,13631,13638,13642,13652,13656,13660,13664,13671,13690,13701,13711,13732,13756
+DT|13757,13759,13761,13784,13807,13815,13819,13829,13864,13869,13899,13900,13902,13910,13924,13926,13927,13935,13980,14057
+LB|815,821,1052,1120,1192,1233,1364,1547,1875,1905,2110,2147,2151,2330,2350,2353,2389,2429,2432,2472,2617,2677,3166,3167,3176,3206,3222,3254,3274,3276,3291,3363,3369,3401,3734,3747,4067,4084,4090,4099,4110,4118,4163,4191,4203,4213,4225,4255,4413,4426,4449,4572,4579,4606,4643,4811,4960,4968,4978,4980
+LB|4990,5025,5031,5041,5056,5099,5158,5183,5300,5303,5318,5332,5334,5340,5345,5346,5348,5576,5580,5726,5748,5753,5757,5822,5830,5843,5894,5928,5944,5952,5960,5979,6056,6057,6065,6105,6119,6131,6132,6141,6179,6190,6211,6214,6217,6218,6220,6294,6302,6315,6348,6353,6430,6485,6551,6581,6611,6612,6651,6687
+LB|6807,6811,6815,6860,6867,6880,6891,6937,6941,6949,6977,6997,7006,7011,7012,7014,7020,7023,7127,7144,7155,7197,7268,7277,7329,7346,7364,7421,7451,7504,7634,7647,7648,7651,7672,7673,7677,7683,7704,7750,7782,7788,7807,7814,7815,7821,7836,7841,7846,7878,7921,7936,7957,8020,8263,8266,8267,8272,8278,8283
+LB|8285,8292,8297,8299,8309,8311,8324,8328,8329,8334,8349,8362,8363,8367,8369,8371,8388,8396,8402,8525,8530,8576,8580,8618,8620,8635,8641,8659,8680,8687,8691,8710,8733,8758,8806,8836,8839,8869,8870,8889,10880,10911,10914,10923,10926,10933,10935,10947,10969,10970,10980,10984,10992,11000,11003,11004,11017,11025,11066,11074
+LB|11086,11108,11118,11135,11230,11251,11254,11272,11273,11281,11297,11305,11315,11348,11350,11394,11454,11470,11550,11687,11701,11712,11724,11727,11734,11742,11747,11752,11757,11761,11770,11778,11790,11805,11807,11842,11855,11893,11907,11986,12012,12041,12051,12054,12057,12083,12111,12140,12164,12227,12255,12391,12397,12566,12578,12607,12614,12617,12630,12637
+LB|12640,12646,12648,12650,12653,12666,12667,12672,12684,12722,12733,12764,12781,12790,12835,12853,12917,12922,12944,12948,12956,13000,13024,13037,13130,13146,13155,13165,13174,13176,13187,13209,13267,13365,13375,13379,13388,13391,13453,13479,13481,13482,13488,13490,13494,13512,13520,13524,13531,13542,13551,13555,13572,13579,13586,13587,13591,13593,13607,13612
+LB|13625,13684,13687,13718,13721,13735,13736,13739,13754,13763,13775,13785,13787,13791,13800,13809,13843,13875,13893,13897,13915,13971,14023,14024,14026,14028,14030,14046,14051
+CB|3189,3838,4107,4124,4136,4964,4982,5048,5051,5054,5328,5372,5493,5691,5888,5946,6025,6128,6333,6476,6791,6829,6836,6839,6876,6928,6969,7117,7133,7200,7419,7628,7630,7641,7642,7655,7667,7669,7671,7685,7686,7687,7707,7708,7712,7813,7819,7830,8261,8264,8275,8286,8290,8296,8305,8308,8310,8321,8333,8341
+CB|8361,8364,8373,8374,8381,8384,8386,8389,8390,8470,8476,8481,8487,8519,8666,8702,8833,8901,10878,10881,10882,10891,10894,10897,10906,10913,10918,10930,10954,10962,10963,10972,10978,10990,10993,10999,11001,11006,11014,11018,11027,11032,11042,11052,11160,11330,11343,11391,11440,11535,11656,11662,11675,11676,11685,11689,11693,11697,11717,11730
+CB|11738,11749,11753,11755,11765,11769,11775,11779,11787,11809,11905,11938,11993,12147,12182,12230,12234,12269,12557,12559,12565,12576,12584,12595,12596,12601,12603,12622,12626,12638,12657,12678,12716,12717,12726,12730,12767,12942,13107,13367,13368,13369,13370,13385,13389,13393,13396,13454,13469,13470,13478,13485,13489,13496,13508,13510,13513,13514,13544,13556
+CB|13564,13565,13569,13594,13611,13616,13633,13654,13675,13694,13713,13720,13727,13742,13751,13765,13769,13790,13811,13828,13845,13848,13853,13857,13858,13874,13881,13887,13892,13903,13938,13953,13959,13974,13983,14042,14045,14060
+S|1686,3233,3268,4074,4081,4224,4963,5017,5036,5044,5055,5071,5361,5452,5519,5520,5534,5792,5876,5883,5893,5908,5920,6210,6284,6301,6314,6416,6419,6711,6788,6799,6855,6872,6888,6911,6923,6947,7036,7044,7053,7058,7069,7136,7224,7659,7666,7682,7698,7715,7730,7787,7811,7816,7835,8004,8293,8294,8323,8339
+S|8348,8377,8392,8394,8395,8397,8406,8496,8509,8510,8532,8542,8578,8683,8726,8838,8860,10905,10927,10936,10939,10949,10974,10975,10985,10986,10997,11011,11019,11022,11026,11036,11050,11121,11151,11185,11233,11352,11353,11395,11427,11429,11481,11674,11682,11705,11710,11726,11728,11731,11739,11744,11763,11797,11831,11841,11872,11916,11951,11965
+S|11966,12011,12056,12058,12089,12102,12115,12142,12161,12183,12232,12567,12588,12591,12604,12611,12639,12654,12668,12673,12694,12702,12710,12736,12748,12783,12836,12855,12877,12912,12920,12955,12962,13156,13360,13371,13384,13399,13406,13452,13462,13474,13511,13517,13522,13523,13561,13567,13576,13578,13605,13618,13627,13649,13655,13672,13680,13722,13737,13745
+S|13793,13794,13803,13814,13817,13851,13854,13863,13877,13896,13960,13986,14025,14033
+DE/DT|529,550,554,579,583,594,608,754,878,1027,1028,1186,1197,1288,1383,1414,1492,1558,1562,1640,1857,1881,1932,2027,2031,2143,2227,2317,2340,2344,2357,2365,2395,2398,2405,2457,2511,2517,2614,2796,2827,3232,3238,3265,3277,3304,3308,3473,3560,3633,3681,3785,4065,4069,4101,4105,4106,4113,4132,4148
+DE/DT|4166,4173,4240,4251,4256,4271,4594,4604,4965,4975,5002,5015,5042,5057,5077,5090,5302,5470,5483,5532,5572,5613,5623,5636,5727,5842,5945,5981,5989,6005,6026,6033,6116,6120,6133,6157,6177,6186,6235,6304,6390,6423,6467,6494,6510,6536,6542,6601,6760,6831,6838,6897,6995,7004,7024,7030,7111,7124,7125,7166
+DE/DT|7281,7325,7326,7327,7341,7362,7369,7390,7456,7487,7519,7646,7710,7718,7770,7772,7802,7804,7810,7832,7866,7876,8029,8037,8279,8281,8288,8291,8307,8318,8319,8327,8357,8358,8547,8552,8564,8625,8725,8734,8736,8794,8816,8841,8850,8874,8887,8898,8899,10931,10945,10971,10989,10991,10996,11002,11043,11054,11072,11096
+DE/DT|11258,11432,11694,11908,11974,12004,12096,12128,12594,14013
+DE/LB|720,856,871,922,957,967,1038,1141,1242,1657,1947,1999,2036,2042,2084,2130,2308,2327,2343,2363,2368,2393,2427,3156,3174,3182,3197,3217,3234,3303,3502,3743,3973,4063,4070,4075,4086,4097,4112,4114,4135,4170,4241,4259,4402,4967,4999,5021,5030,5059,5061,5067,5075,5081,5218,5330,5342,5378,5466,5839
+DE/LB|5840,5862,5865,5912,5971,5991,6003,6183,6272,6296,6436,6782,6800,6802,6812,6837,6848,6851,6864,6868,6900,6910,6921,6958,6962,6965,7113,7120,7154,7231,7342,7391,7626,7627,7633,7635,7637,7640,7653,7674,7676,7678,7681,7688,7709,7721,7723,7726,7740,7764,7765,7783,7849,8280,8287,8322,8325,8343,8351,8355
+DE/LB|8368,8372,8382,8383,8398,8494,8569,8739,8776,8854,10873,10875,10883,10885,10889,10892,10898,10908,10917,10921,10929,10938,10940,10944,10973,10998,11021,11041,11084,11098,11193,11194,11336,11441,11512,11514,11663,11667,11679,11703,11714,11720,11722,11751,11754,11759,11816,11861,11929,12030,12427,12550,12556,12562,12568,12571,12574,12579,12585,12593
+DE/LB|12608,12609,12610,12621,12636,12643,12644,12655,12669,12677,12683,12879,12978,13195,13340,13341,13359,13361,13363,13366,13377,13381,13455,13457,13460,13466,13492,13562,13573,13589,13614,13626,13643,13678,13733,13771,13808,13824,13840,13856,13865,13895,13936,13951,13970,13979,14022,14032
+CB/S|518,544,869,972,1043,1079,1175,1182,1203,1205,1213,1216,1343,1366,1367,1518,1525,1536,1565,1576,1672,1703,1913,2008,2022,2029,2055,2067,2267,2323,2338,2352,2355,2383,2403,2445,2448,2501,2572,2679,2719,2826,2860,2869,3160,3192,3230,3231,3237,3246,3252,3262,3279,3284,3341,3374,3388,3399,3400,3415
+CB/S|3546,3559,3605,3714,3764,4059,4071,4072,4078,4079,4083,4087,4088,4091,4093,4096,4126,4129,4133,4138,4140,4158,4180,4188,4202,4216,4223,4238,4277,4347,4427,4439,4476,4503,4611,4661,4971,4974,4979,5029,5040,5064,5078,5091,5098,5150,5178,5181,5193,5222,5301,5317,5341,5368,5369,5370,5375,5379,5388,5424
+CB/S|5436,5445,5479,5508,5526,5583,5655,5658,5662,5671,5674,5736,5827,5853,5860,5864,5866,5881,5882,5914,5921,5930,5959,5982,5983,6014,6030,6060,6123,6127,6138,6140,6145,6216,6222,6254,6257,6258,6283,6285,6289,6291,6310,6355,6640,6645,6724,6785,6809,6817,6833,6840,6856,6871,6882,6896,6902,6925,6935,6940
+CB/S|6946,6961,6968,6983,6994,7052,7137,7138,7150,7169,7170,7188,7208,7226,7259,7347,7392,7406,7520,7632,7658,7662,7668,7680,7701,7761,7775,7776,7780,7786,7795,7796,7805,7822,7823,7837,7889,7892,7907,7942,7970,7974,8031,8104,8271,8276,8282,8284,8298,8300,8303,8312,8313,8314,8330,8353,8359,8365,8378,8379
+CB/S|8403,8405,8478,8503,8506,8515,8516,8521,8537,8546,8612,8714,8719,8748,8752,8763,8765,8788,8791,8795,8803,8834,8844,8857,8871,8872,8925,10900,10903,10919,10932,10967,10976,10988,10995,11029,11031,11033,11037,11040,11076,11085,11150,11173,11206,11219,11275,11278,11290,11325,11339,11424,11425,11448,11455,11458,11479,11487,11489,11531
+CB/S|11661,11678,11686,11700,11725,11750,11764,11766,11771,11772,11801,11826,11830,11836,11837,11860,11896,11934,11973,12037,12050,12124,12132,12137,12160,12345,12388,12597,12605,12619,12631,12647,12661,12675,12712,12785,12819,12838,12856,12861,12923,12931,12957,13019,13049,13083,13157,13172,13247,13376,13382,13386,13397,13398,13500,13509,13613,13635,13653,13679
+CB/S|13707,13723,13740,13786,13820,13823,13914,13965,13977,14052
+LB/S|2287,3144,3272,3373,4056,4077,5161,5306,6610,6781,6901,6990,7016,7185,8000,8399,8517,11777,11847
+CB/WR|12530
+`;
+// Ajuste manual, se a liga decidir diferente do FBB para algum jogador: { "id do Sleeper": "DT" } (ou "DE/DT" para híbrido).
+const AJUSTES_POS = {};
+let FBB_IDX = null;
+function indiceFbb() {
+  if (FBB_IDX) return FBB_IDX;
+  const idx = {};
+  for (const ln of FBB_TXT.trim().split("\n")) { const [cod, ids] = ln.split("|"); ids.split(",").forEach(id => { idx[id.trim()] = cod; }); }
+  return (FBB_IDX = idx);
+}
+function posFbb(id) {
+  const aj = AJUSTES_POS[id]; const cod = aj || indiceFbb()[id];
+  return cod ? { cod, pos: emOrdem(cod.split("/")), ajuste: !!aj } : null;
+}
 // Os 11 titulares de defesa (slots DL, LB, DB e IDP_FLEX) precisam fechar uma destas formações.
 const FORMACOES = [
   ["4-3",   { DT: 2, DE: 2, LB: 3, CB: 2, S: 2 }],
@@ -2356,6 +2451,7 @@ const FORMACOES = [
 ];
 const POS_DEF = ["DT", "DE", "LB", "CB", "S"];
 const SLOTS_IDP = new Set(["DL", "LB", "DB", "IDP_FLEX"]);
+const SLOT_PREF = { DL: ["DT", "DE"], LB: ["LB"], DB: ["CB", "S"] };
 // Código do Ourlads -> posição da regra. LOLB/ROLB (e o RUSH, que é o mesmo lugar em BAL, NYG e SEA) valem DE ou LB;
 // NT vale DT; nickel (NB) é híbrido CB/S. Quem não estava no depth chart usa a posição do elenco do Ourlads (OLB = DE ou LB).
 // Além disso, quem é híbrido no Sleeper vale as duas: DL/LB = DE ou LB; LB/DB = LB ou o lado da secundária do Ourlads.
@@ -2415,8 +2511,12 @@ function acharOurlads(p) {
 function casar(def, f) {
   const vagas = []; for (const p of POS_DEF) for (let i = 0; i < (f[p] || 0); i++) vagas.push(p);
   const dono = new Array(vagas.length).fill(-1);
+  // o híbrido tenta primeiro a posição do spot em que foi escalado (DL -> DE/DT, LB -> LB, DB -> CB/S)
+  const ordem = def.map(d => { const pref = SLOT_PREF[d.slot] || []; const vs = vagas.map((_, v) => v);
+    return vs.filter(v => pref.includes(vagas[v])).concat(vs.filter(v => !pref.includes(vagas[v]))); });
   const tenta = (j, vis) => {
-    for (let v = 0; v < vagas.length; v++) {
+    for (const v of ordem[j]) if (!vis[v] && dono[v] < 0 && def[j].pos.includes(vagas[v])) { vis[v] = true; dono[v] = j; return true; }  // vaga livre primeiro
+    for (const v of ordem[j]) {
       if (vis[v] || !def[j].pos.includes(vagas[v])) continue; vis[v] = true;
       if (dono[v] < 0 || tenta(dono[v], vis)) { dono[v] = j; return true; }
     }
@@ -2436,10 +2536,15 @@ function avaliarFormacao(league, titulares, players) {
     const id = titulares[i];
     if (!id || id === "0") { vazios++; return; }
     const p = players[id] || {};
+    const nome = ((p.first_name || "") + " " + (p.last_name || "")).trim() || id;
+    const curto = p.first_name && p.last_name ? p.first_name.charAt(0) + ". " + p.last_name : nome;
+    const fb = posFbb(id);
+    if (fb) { def.push({ id, slot, nome, curto, time: p.team || "", cod: fb.cod, fonte: fb.ajuste ? "ajuste" : "fbb", hib: "", pos: fb.pos }); return; }
+    // fora do FBB: Ourlads de 17/10 (somando o híbrido do Sleeper) e, por último, a posição do Sleeper
     const o = acharOurlads(p);
     const base = o ? o.pos : posSleeperDef(p);
     const hib = hibridoSleeper(p, base);
-    def.push({ id, nome: ((p.first_name || "") + " " + (p.last_name || "")).trim() || id, time: p.team || "",
+    def.push({ id, slot, nome, curto, time: p.team || "",
       cod: o ? o.cod : (p.position || "?"), fonte: o ? o.src : "sleeper", hib: hib.length ? (p.fantasy_positions || []).filter(x => ["DL", "LB", "DB"].includes(x)).join("/") : "",
       pos: emOrdem([...new Set([...base, ...hib])]) });
   });
@@ -2447,8 +2552,12 @@ function avaliarFormacao(league, titulares, players) {
   const tent = FORMACOES.map(([nome, f]) => ({ nome, ...casar(def, f) }));
   const fecham = vazios ? [] : tent.filter(t => t.n === def.length && def.length === 11);
   const melhor = fecham[0] || tent.reduce((a, b) => (b.n > a.n ? b : a));
-  return { def, vazios, ok: fecham.length > 0, fecham: fecham.map(t => t.nome), melhor, semOurlads: def.filter(d => d.fonte === "sleeper") };
+  // formações mais próximas (todas as que empatam com a melhor), para dizer o que falta em cada uma
+  const perto = fecham.length ? fecham : tent.filter(t => t.n === melhor.n);
+  return { def, vazios, ok: fecham.length > 0, fecham: fecham.map(t => t.nome), melhor, perto, tent,
+    foraFbb: def.filter(d => d.fonte !== "fbb" && d.fonte !== "ajuste") };
 }
+const marcaFonte = d => d.fonte === "fbb" ? "" : d.fonte === "ajuste" ? " (ajuste)" : "*";
 const ORDEM_RESUMO = ["DT", "DT/DE", "DT/DE/LB", "DE", "DE/LB", "LB", "LB/CB/S", "LB/S", "LB/CB", "CB", "CB/S", "S"];
 function resumoDefesa(fm) {
   const c = {}; fm.def.forEach(d => { const k = d.pos.join("/") || "?"; c[k] = (c[k] || 0) + 1; });
@@ -2457,35 +2566,53 @@ function resumoDefesa(fm) {
 const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
 const ordemPos = k => { const i = ORDEM_RESUMO.indexOf(k); return i < 0 ? 99 : i; };
 const contagem = o => juntar(Object.keys(o).sort((a, b) => ordemPos(a) - ordemPos(b)).map(k => o[k] + " " + k));
+const juntarOu = a => a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " OU " + a[a.length - 1];
+const txtFalta = t => (sum(t.faltam) > 1 ? "FALTAM " : "FALTA ") + contagem(t.faltam);
+const txtSobra = t => (sum(t.sobram) > 1 ? "SOBRAM " : "SOBRA ") + contagem(t.sobram);
 function descFormacao(fm) {
-  const nota = fm.semOurlads.length ? " [* SEM OURLADS, POSIÇÃO DO SLEEPER: " + juntar(fm.semOurlads.map(d => d.nome.toUpperCase())) + "]" : "";
+  const nota = fm.foraFbb.length ? " [* FORA DO FBB DE " + FBB_DATA + ": " + juntar(fm.foraFbb.map(d => d.nome.toUpperCase() + " COMO " + d.pos.join("/"))) + "]" : "";
   if (fm.vazios) return "DEFESA INCOMPLETA: " + fm.vazios + (fm.vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO") + " NA DEFESA" + nota;
-  const m = fm.melhor;
-  return "DEFESA FORA DAS FORMAÇÕES (" + resumoDefesa(fm) + "): PARA A " + m.nome +
-    (Object.keys(m.faltam).length ? (sum(m.faltam) > 1 ? " FALTAM " : " FALTA ") + contagem(m.faltam) : "") +
-    (Object.keys(m.sobram).length ? (sum(m.sobram) > 1 ? "; SOBRAM " : "; SOBRA ") + contagem(m.sobram) : "") + nota;
+  const ps = fm.perto; const tem = o => Object.keys(o).length > 0;
+  let txt;
+  if (ps.length === 1) {
+    const m = ps[0];
+    txt = "PARA A " + m.nome + (tem(m.faltam) ? " " + txtFalta(m) : "") + (tem(m.sobram) ? "; " + txtSobra(m) : "");
+  } else if (tem(ps[0].sobram) && ps.every(t => contagem(t.sobram) === contagem(ps[0].sobram))) {
+    // a mesma sobra em todas: diz a sobra uma vez e o que falta em cada formação
+    txt = txtSobra(ps[0]) + "; " + (sum(ps[0].faltam) > 1 ? "FALTAM " : "FALTA ") + juntarOu(ps.map(t => contagem(t.faltam) + " PARA A " + t.nome));
+  } else {
+    txt = ps.map(t => "PARA A " + t.nome + (tem(t.faltam) ? " " + txtFalta(t) : "") + (tem(t.sobram) ? " E " + txtSobra(t) : "")).join("; OU ");
+  }
+  return "DEFESA FORA DAS FORMAÇÕES (" + resumoDefesa(fm) + "): " + txt + nota;
 }
 const fraseFormacao = t => "@" + t.gm + " (" + t.franquia + ") ESTÁ COM A " + descFormacao(t.formacao);
-// designação de cada titular de defesa, time por time (para conferir e copiar)
-function linhasDefesa(t) {
-  const fm = t.formacao; const m = fm.melhor;
-  const cab = "@" + t.gm + " (" + t.franquia + ") — " + (fm.ok ? fm.fecham.join(" ou ") + " ✅" : fm.vazios ? "defesa incompleta ❌" : "fora das formações ❌");
+// designação de cada titular de defesa numa formação (a que fecha ou a mais próxima)
+function linhasFormacao(fm, m) {
   const por = {}; const sobra = [];
   fm.def.forEach((d, j) => {
-    const txt = d.nome + " (" + d.cod + (d.fonte === "sleeper" ? "*" : "") + (d.hib ? " · " + d.hib + " no Sleeper" : "") + (d.pos.length > 1 && m.atrib[j] ? "→" + m.atrib[j] : "") + ")";
-    if (m.atrib[j]) (por[m.atrib[j]] = por[m.atrib[j]] || []).push(txt); else sobra.push(txt + " " + d.pos.join("/"));
+    const txt = d.nome + " (" + d.cod + marcaFonte(d) + (d.hib ? " · " + d.hib + " no Sleeper" : "") + (d.pos.length > 1 && m.atrib[j] ? "→" + m.atrib[j] : "") + ")";
+    if (m.atrib[j]) (por[m.atrib[j]] = por[m.atrib[j]] || []).push(txt); else sobra.push(txt);
   });
-  const linhas = [cab];
-  POS_DEF.forEach(p => { if (por[p]) linhas.push(p + ": " + por[p].join(", ")); });
+  const linhas = [];
+  POS_DEF.forEach(p => { const n = (FORMACOES.find(f => f[0] === m.nome)[1][p] || 0); const tem = por[p] || [];
+    if (tem.length || n) linhas.push(p + ": " + tem.join(", ") + (n > tem.length ? (tem.length ? ", " : "") + "falta " + (n - tem.length) : "")); });
   if (sobra.length) linhas.push("Sem vaga na " + m.nome + ": " + sobra.join(", "));
+  return linhas;
+}
+function linhasDefesa(t) {
+  const fm = t.formacao;
+  const cab = "@" + t.gm + " (" + t.franquia + ") — " + (fm.ok ? fm.fecham.join(" ou ") + " ✅" : fm.vazios ? "defesa incompleta ❌" : "fora das formações ❌");
+  const linhas = [cab];
+  if (fm.ok || fm.vazios) linhasFormacao(fm, fm.melhor).forEach(l => linhas.push(l));
+  else fm.perto.forEach(m => { linhas.push("Na " + m.nome + " (" + (sum(m.faltam) > 1 ? "faltam " : "falta ") + contagem(m.faltam) + "):"); linhasFormacao(fm, m).forEach(l => linhas.push("  " + l)); });
   if (fm.vazios) linhas.push("Spots vazios na defesa: " + fm.vazios);
   return linhas;
 }
 function textoDefesas(res) {
   const ts = res.times.filter(t => t.formacao);
-  const linhas = ["*DEFESAS — " + res.liga.nome.toUpperCase() + "* (posições do Ourlads de " + OURLADS_DATA + ")"];
+  const linhas = ["*DEFESAS — " + res.liga.nome.toUpperCase() + "* (posições do FBB de " + FBB_DATA + ")"];
   ts.forEach(t => { linhas.push(""); linhasDefesa(t).forEach((l, i) => linhas.push(i ? l : "*" + l + "*")); });
-  if (ts.some(t => t.formacao.semOurlads.length)) linhas.push("", "* = não estava no Ourlads em " + OURLADS_DATA + "; vale a posição do Sleeper.");
+  if (ts.some(t => t.formacao.foraFbb.length)) linhas.push("", "* = não estava no FBB em " + FBB_DATA + "; vale a posição do Ourlads (17/10) ou, se não estiver lá, a do Sleeper.");
   return linhas.join("\n");
 }
 
