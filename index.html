@@ -270,6 +270,7 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 18/10/2026 (semana sempre conferida no Sleeper)</p>
 </div>
 
 <script>
@@ -426,6 +427,21 @@ function atualizarSnapBox() {
   if (s) $("snapTxt").textContent = "Conferência: usar o status da varredura oficial de " + s.quando + (s === rem ? " (planilha)" : " (este aparelho)");
   else $("usarSnap").checked = false;
 }
+
+// ---------------------------------------------------------------- semana atual (Sleeper)
+// A semana segue a do Sleeper; só fica outra se o usuário trocar à mão nesta visita.
+// Antes de cada varredura a semana é conferida de novo, para uma aba aberta há dias não ler a rodada antiga.
+function aplicarEstadoNfl(s) {
+  if (!s) return;
+  const w = parseInt(s.display_week || s.week, 10);
+  if (w >= 1 && w <= 18) { st.semanaSleeper = w; if (!st.semanaMexida && w !== st.semana) setSemana(w); }
+  const t = parseInt(s.league_season || s.season, 10); if (t) { $("temporada").value = String(t); st.temporada = t; }
+  st.estadoEm = Date.now();
+  atualizarSnapBox();
+}
+async function atualizarEstadoNfl() { try { aplicarEstadoNfl(await getJSON("/state/nfl")); } catch (e) {} }
+async function conferirSemana() { if (!st.semanaSleeper || Date.now() - (st.estadoEm || 0) > 5 * 60 * 1000) await atualizarEstadoNfl(); }
+const avisoSemana = w => st.semanaSleeper && w !== st.semanaSleeper ? "Atenção: esta é a semana " + w + ", escolhida à mão. A semana atual no Sleeper é a " + st.semanaSleeper + "." : "";
 
 // ---------------------------------------------------------------- dados
 async function getJSON(path) {
@@ -763,6 +779,7 @@ async function rodarMeus() {
   const btn = $("rodarMeus"); const status = (t, err) => { $("statusMeus").textContent = t; $("statusMeus").className = "status" + (err ? " err" : ""); };
   const usuario = $("usuario").value.trim();
   if (!usuario) { status("Digite um usuário do Sleeper.", true); return; }
+  status("Conferindo a semana no Sleeper…"); await conferirSemana();
   const semana = parseInt($("semana").value, 10);
   if (!(semana >= 1 && semana <= 18)) { status("Escolha uma semana de 1 a 18.", true); return; }
   if (semana !== st.semana) setSemana(semana);
@@ -829,6 +846,7 @@ function desenharMeus(r) {
     el("span", { class: "count", text: "@" + r.usuario }),
     el("span", { class: "pill " + (com.length ? "wo" : "ok"), text: com.length + " de " + r.ligas.length + " ligas com problema" }),
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
+  if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
   const avisos = [];
   if (r.foraTemporada) avisos.push(r.foraTemporada + (r.foraTemporada > 1 ? " ligas fora da temporada (sem draft ou encerradas) não foram verificadas." : " liga fora da temporada (sem draft ou encerrada) não foi verificada."));
   if (r.semTime.length) avisos.push("Sem time do usuário em: " + r.semTime.join(", ") + ".");
@@ -923,6 +941,7 @@ async function rodarPessoal() {
   const btn = $("rodarPessoal"); const status = (t, err) => { $("statusPessoal").textContent = t; $("statusPessoal").className = "status" + (err ? " err" : ""); };
   const usuario = $("usuarioP").value.trim();
   if (!usuario) { status("Digite um usuário do Sleeper.", true); return; }
+  status("Conferindo a semana no Sleeper…"); await conferirSemana();
   const semana = parseInt($("semana").value, 10);
   if (!(semana >= 1 && semana <= 18)) { status("Escolha uma semana de 1 a 18.", true); return; }
   if (semana !== st.semana) setSemana(semana);
@@ -1024,6 +1043,7 @@ function desenharPessoal(r) {
     r.conferirFr ? el("span", { class: "pill wo", text: abaixo + " abaixo do mínimo de franchises" }) : null,
     r.banco ? el("span", { class: "pill warn", text: "🔍 " + comBanco + " com reserva forte no banco" }) : null,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
+  if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
   const avisos = [];
   if (r.conferirFr && r.faltando.length) avisos.push("Não achei pelo nome estas ligas franchise da sua lista: " + r.faltando.join(", ") + ". Marque-as em \"Minhas ligas franchise\", no fim da página.");
   if (r.foraTemporada) avisos.push(r.foraTemporada + (r.foraTemporada > 1 ? " ligas fora da temporada não foram verificadas." : " liga fora da temporada não foi verificada."));
@@ -3164,6 +3184,7 @@ async function rodar() {
   const ligas = LIGAS.filter(l => l.grupo === grupo && st.ligasOn.has(l.id));
   if (!ligas.length) { status("Escolha pelo menos uma liga.", true); return; }
   if (st.modo === "draft") return rodarDraft(ligas, grupo, btn, status);
+  status("Conferindo a semana no Sleeper…"); await conferirSemana();
   const semana = parseInt($("semana").value, 10);
   if (!(semana >= 1 && semana <= 18)) { status("Escolha uma semana de 1 a 18.", true); return; }
   if (semana !== st.semana) setSemana(semana);
@@ -3297,7 +3318,7 @@ $("planilha").addEventListener("change", async () => {
     for (const gid of ["bfa", "cap"]) { const r = st.res[gid]; if (r && r.tipo === "draft") { r.resultados.forEach(recalcularDraft); if (st.grupo === gid) desenharDraft(r.resultados); } }
   } catch (e) { msg("Não consegui ler a planilha: " + e.message + "."); }
 });
-$("semana").addEventListener("change", () => { const w = parseInt($("semana").value, 10); if (w >= 1 && w <= 18) setSemana(w); });
+$("semana").addEventListener("change", () => { const w = parseInt($("semana").value, 10); if (w >= 1 && w <= 18) { st.semanaMexida = !!st.semanaSleeper && w !== st.semanaSleeper; setSemana(w); } });
 $("rodar").addEventListener("click", rodar);
 $("rodarMeus").addEventListener("click", rodarMeus);
 $("rodarPessoal").addEventListener("click", rodarPessoal);
@@ -3320,10 +3341,9 @@ setModo(dia === 4 || dia === 5 ? "early" : dia === 2 || dia === 3 ? "terca" : "d
 $("meusEarly").checked = !(dia === 3 || dia === 4);   // quarta/quinta: ainda vale olhar o jogo de quinta
 $("pEarly").checked = $("meusEarly").checked;
 setSemana(1);
-getJSON("/state/nfl").then(s => {
-  const w = parseInt(s.display_week || s.week, 10); if (w >= 1 && w <= 18) setSemana(w);
-  const t = parseInt(s.league_season || s.season, 10); if (t) { $("temporada").value = String(t); st.temporada = t; atualizarSnapBox(); }
-}).catch(() => {});
+atualizarEstadoNfl();
+// aba deixada aberta no celular: ao voltar para ela, confere de novo a semana atual no Sleeper
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Date.now() - (st.estadoEm || 0) > 10 * 60 * 1000) atualizarEstadoNfl(); });
 carregarListaOficial();
 </script>
 </body>
