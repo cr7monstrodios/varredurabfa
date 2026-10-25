@@ -97,6 +97,7 @@ ul.lst li { padding: 8px 10px 8px 12px; border-radius: 8px; border-left: 4px sol
 ul.lst li.wo { background: var(--wo-soft); border-color: var(--wo); }
 ul.lst li.warn { background: var(--warn-soft); border-color: var(--warn); }
 ul.lst li.info { background: var(--info-soft); border-color: var(--info); }
+ul.lst li.neutro { background: var(--surface); border-color: var(--line); color: var(--ink); }
 .pill.info { background: var(--info-soft); color: var(--info); }
 .gm { font-weight: 700; }
 .foot { font-size: 12.5px; color: var(--muted); }
@@ -240,7 +241,7 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
         pontos maior que um titular da mesma posição (lê as semanas anteriores; demora um pouco mais)</span></label>
       <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver: jogadores livres na liga com snap subindo e pelo menos
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
-        dos snaps no último jogo (crescendo pelo menos 15 pontos nos últimos 3 jogos), pela média desses jogos (até 3 por liga)</span></label>
+        dos snaps no último jogo (crescendo pelo menos 15 pontos nos últimos 3 jogos), com a média desses jogos (até 3 por liga; nas ligas de cap, só se o elenco tiver vaga)</span></label>
       <label class="op"><input id="pEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana, que já travaram</span></label>
       <label class="op"><input id="pQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
       <div class="toolbar">
@@ -274,7 +275,7 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 25/10/2026 (waiver, spots vazios e reserva por vaga)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 25/10/2026 · 2 (banco em cada problema, empate na bye, ligas cap)</p>
 </div>
 
 <script>
@@ -768,24 +769,46 @@ async function emLotes(itens, n, fn) {
   for (let i = 0; i < Math.min(n, fila.length); i++) trabalhadores.push((async () => { while (fila.length) await fn(fila.shift()); })());
   await Promise.all(trabalhadores);
 }
+// Problemas da escalação. Com o elenco e as vagas da liga, cada problema diz o que fazer:
+// vermelho = tem opção no banco para a vaga (corrigir); amarelo = não tem opção no banco.
 function problemasDoTime(titulares, ctx, extra) {
   const itens = [];
-  const vazios = titulares.filter(id => !id || id === "0").length;
-  if (vazios && extra && extra.roster && extra.rp && extra.rp.length) vaziosDoTime(titulares, extra.roster, extra.rp, ctx, extra.empate).forEach(x => itens.push(x));
-  else if (vazios) itens.push({ txt: vazios + (vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO") });
-  for (const id of titulares) {
-    if (!id || id === "0") continue;
-    const p = ctx.players[id]; if (!p) continue;
-    const nomeJ = ((p.first_name || "") + " " + (p.last_name || "")).trim().toUpperCase();
-    const pos = [p.position, p.team].filter(Boolean).join(" · ");
-    const est = p.team ? (ctx.cal[p.team] || "normal") : "semtime";
-    if (est === "early" && ctx.ignorarAntecipados) continue;
-    if (est === "semtime") { itens.push({ txt: nomeJ + " ESTÁ SEM TIME", pos }); continue; }
-    if (est === "bye") { if (!(ctx.semQbKBye && ehQbOuK(p))) itens.push({ txt: nomeJ + " ESTÁ DE BYE", pos }); continue; }
-    const s = p.injury_status;
-    if (ctx.semStatusDe && p.team === ctx.semStatusDe) continue;
-    if (s && (s !== "Questionable" || ctx.mostrarQ)) itens.push({ txt: nomeJ + " ESTÁ " + (NAO_CONTA[s] || String(s).toUpperCase()), pos });
-  }
+  const rp = extra && extra.rp && extra.rp.length ? extra.rp : null;
+  const roster = rp && extra.roster ? extra.roster : null;
+  const est = p => p && p.team ? (ctx.cal[p.team] || "normal") : "semtime";
+  const banco = roster ? bancoDoTime(roster, titulares).map(id => ctx.players[id]).filter(Boolean) : [];
+  const livresPara = slot => banco.filter(p => cabeNoSlot(p, slot) && p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && est(p) === "early")
+    && (!p.injury_status || p.injury_status === "Questionable"));
+  const semOpcao = () => extra && extra.cap && !extra.temVaga ? " · SEM VAGA NO ELENCO PARA PEGAR ALGUÉM (LIGA CAP)" : " · SEM OPÇÃO NO BANCO, VEJA A WAIVER";
+  if (!roster) { const vazios = titulares.filter(id => !id || id === "0").length; if (vazios) itens.push({ txt: vazios + (vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO"), tipo: "wo" }); }
+  titulares.forEach((id, i) => {
+    const slot = rp ? rp[i] : null, rot = slot ? (SLOT_NOME[slot] || slot) : "";
+    if (!id || id === "0") {
+      if (!roster) return;
+      const lv = livresPara(slot);
+      if (lv.length) { itens.push({ txt: "SPOT VAZIO (" + rot + ") · NO BANCO: " + juntar(lv.slice(0, 2).map(nomeDe)), tipo: "wo", corrige: true }); return; }
+      const byes = banco.filter(p => cabeNoSlot(p, slot) && est(p) === "bye");
+      itens.push({ txt: "SPOT VAZIO (" + rot + ")" + (byes.length ? ": " + juntar(byes.slice(0, 2).map(nomeDe)) + " DE BYE" : "") + semOpcao(), tipo: "warn" });
+      return;
+    }
+    const p = ctx.players[id]; if (!p) return;
+    const nomeJ = nomeDe(p), pos = [p.position, p.team].filter(Boolean).join(" · ");
+    const e = est(p);
+    if (e === "early" && ctx.ignorarAntecipados) return;
+    let motivo;
+    if (e === "semtime") motivo = " ESTÁ SEM TIME";
+    else if (e === "bye") { if (ctx.semQbKBye && ehQbOuK(p)) return; motivo = " ESTÁ DE BYE"; }
+    else {
+      if (ctx.semStatusDe && p.team === ctx.semStatusDe) return;
+      const s = p.injury_status; if (!s) return;
+      if (s === "Questionable") { if (ctx.mostrarQ) itens.push({ txt: nomeJ + " ESTÁ QUESTIONABLE", pos, tipo: "warn" }); return; }
+      motivo = " ESTÁ " + (NAO_CONTA[s] || String(s).toUpperCase());
+    }
+    if (!roster) { itens.push({ txt: nomeJ + motivo, pos, tipo: "wo" }); return; }
+    const lv = livresPara(slot);
+    if (lv.length) itens.push({ txt: nomeJ + motivo + " · NO BANCO: " + juntar(lv.slice(0, 2).map(nomeDe)), pos, tipo: "wo", corrige: true });
+    else itens.push({ txt: nomeJ + motivo + semOpcao(), pos, tipo: "warn" });
+  });
   return itens;
 }
 async function rodarMeus() {
@@ -807,10 +830,12 @@ async function rodarMeus() {
     const ordemFixa = ORDEM_POR_USUARIO[(u.username || usuario).toLowerCase()] || ORDEM_POR_USUARIO[usuario.toLowerCase()];
     const posicao = {}; ligas.forEach((l, i) => { posicao[l.league_id] = i; });
     if (ordemFixa) { const k = {}; ordemFixa.forEach((id, i) => { k[id] = i; }); ligas.forEach(l => { posicao[l.league_id] = l.league_id in k ? k[l.league_id] : 10000 + posicao[l.league_id]; }); }
-    const ativas = ligas.filter(l => l.status === "in_season" || l.status === "post_season");
+    const ignoradas = ligas.filter(l => ligaIgnorada(l.name)).map(l => l.name);
+    const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
     const players = await carregarJogadores(status);
     const ctx = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked };
-    const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], foraTemporada: ligas.length - ativas.length };
+    const { cfg } = configMinhas(ativas);
+    const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length };
     let feitas = 0;
     await emLotes(ativas, 6, async (lg) => {
       try {
@@ -821,9 +846,15 @@ async function rodarMeus() {
         const meu = (rosters || []).find(r => r.owner_id === u.user_id || (r.co_owners || []).includes(u.user_id));
         if (!meu) { resultado.semTime.push(lg.name); }
         else {
+          if (ligaEmpateBye(lg.name)) {   // franquia de bye nesta liga = empate: a liga sai da varredura nesta semana
+            const users = await getJSON("/league/" + lg.league_id + "/users").catch(() => []);
+            const fq = franquiaDoMeuTime(lg, league, users, rosters, meu, cfg[lg.league_id]);
+            if (fq && (st.cal[ABBR[fq]] || "normal") === "bye") { resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], nota: fq + " de bye: empate" }); return; }
+          }
           const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
           const titulares = m ? m.starters : (meu.starters || []);
-          const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 }, { roster: meu, rp: league && league.roster_positions, empate: ligaEmpateBye(lg.name) });
+          const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 },
+            { roster: meu, rp: league && league.roster_positions, cap: ligaCap(lg.name), temVaga: temVagaNoElenco(meu, league) });
           const fm = league && comFormacao ? avaliarFormacao(league, titulares, players) : null;
           if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm) });
           resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens });
@@ -864,6 +895,7 @@ function desenharMeus(r) {
   const avisos = [];
   if (r.foraTemporada) avisos.push(r.foraTemporada + (r.foraTemporada > 1 ? " ligas fora da temporada (sem draft ou encerradas) não foram verificadas." : " liga fora da temporada (sem draft ou encerrada) não foi verificada."));
   if (r.semTime.length) avisos.push("Sem time do usuário em: " + r.semTime.join(", ") + ".");
+  if (r.ignoradas && r.ignoradas.length) avisos.push("Fora da varredura (eliminado): " + r.ignoradas.join(", ") + ".");
   if (r.erros.length) avisos.push("Não consegui ler: " + r.erros.join(", ") + ".");
   avisos.forEach(a => box.appendChild(el("p", { class: "foot", text: a })));
   const soProblema = !!st.meusSoProblema;
@@ -875,7 +907,7 @@ function desenharMeus(r) {
   for (const l of r.ligas) {
     const np = problemas(l).length;
     if (!l.itens.length || (soProblema && !np)) {
-      if (!soProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: "sem problema" })));
+      if (!soProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: l.nota || "sem problema" })));
       continue;
     }
     const ul = el("ul", { class: "lst" });
@@ -970,7 +1002,8 @@ async function rodarPessoal() {
     const ordemFixa = ORDEM_POR_USUARIO[(u.username || usuario).toLowerCase()] || ORDEM_POR_USUARIO[usuario.toLowerCase()];
     const posicao = {}; ligas.forEach((l, i) => { posicao[l.league_id] = i; });
     if (ordemFixa) { const k = {}; ordemFixa.forEach((id, i) => { k[id] = i; }); ligas.forEach(l => { posicao[l.league_id] = l.league_id in k ? k[l.league_id] : 10000 + posicao[l.league_id]; }); }
-    const ativas = ligas.filter(l => l.status === "in_season" || l.status === "post_season");
+    const ignoradas = ligas.filter(l => ligaIgnorada(l.name)).map(l => l.name);
+    const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
     const players = await carregarJogadores(status);
     const { cfg, faltando } = configMinhas(ativas);
     const conferirFr = $("pFranq").checked, banco = $("pBanco").checked;
@@ -982,7 +1015,7 @@ async function rodarPessoal() {
     }
     const ctx = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: (id, p) => (p && p.injury_status) || null, margemBanco: parseInt($("pMargem").value, 10) || 8 };
-    const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], foraTemporada: ligas.length - ativas.length,
+    const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
       cfg, faltando, conferirFr, banco, waiver, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
     let feitas = 0;
     await emLotes(ativas, 5, async (lg) => {
@@ -999,8 +1032,12 @@ async function rodarPessoal() {
         const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
         const titulares = m ? m.starters : (meu.starters || []);
         const fq = ehFranq ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
+        if (fq && ligaEmpateBye(lg.name) && (st.cal[ABBR[fq]] || "normal") === "bye") {   // franquia de bye = empate: a liga sai da varredura nesta semana
+          res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], fr: { franquia: fq, bye: true, empate: true }, ehFr }); return;
+        }
+        const cap = ligaCap(lg.name), temVaga = temVagaNoElenco(meu, league);
         const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32, semStatusDe: ehFr && fq ? ABBR[fq] : null },
-          { roster: meu, rp: league && league.roster_positions, empate: ligaEmpateBye(lg.name) });
+          { roster: meu, rp: league && league.roster_positions, cap, temVaga });
         if (ligaSite && ligaSite.formacao && league) { const fm = avaliarFormacao(league, titulares, players); if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm), tipo: "warn" }); }
         let sig = fq ? ABBR[fq] : null, fr = null, folga = Infinity;
         if (sig) {
@@ -1029,7 +1066,7 @@ async function rodarPessoal() {
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
           sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
-        if (cand) waiverDaLiga(cand, league, rosters).forEach(x => itens.push(x));
+        if (cand && (!cap || temVaga)) waiverDaLiga(cand, league, rosters).forEach(x => itens.push(x));   // liga cap: só com vaga livre no elenco
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr });
       } catch (e) { res.erros.push(lg.name); }
       feitas++; status("Lendo ligas… " + feitas + "/" + ativas.length);
@@ -1070,13 +1107,14 @@ function desenharPessoal(r) {
     r.banco ? el("span", { class: "pill warn", text: "🔍 " + comBanco + " com reserva forte no banco" }) : null,
     r.waiver ? el("span", { class: "pill info", text: "💡 " + comWaiver + " com dica de waiver" }) : null,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
-  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver: livres na liga com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo (15 pontos ou mais desde o primeiro dos 3 jogos), pela média dos jogos das semanas " + r.waiver.semanas.join(", ") + " (pontuação de cada liga)." }));
+  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise): livres na liga com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo (15 pontos ou mais desde o primeiro dos 3 jogos), com a média; nas ligas de cap só aparece se o seu elenco tiver vaga. Média dos jogos das semanas " + r.waiver.semanas.join(", ") + " (pontuação de cada liga)." }));
   if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "Não consegui ler as estatísticas para a waiver: " + r.waiver.erro + "." }));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
   const avisos = [];
   if (r.conferirFr && r.faltando.length) avisos.push("Não achei pelo nome estas ligas franchise da sua lista: " + r.faltando.join(", ") + ". Marque-as em \"Minhas ligas franchise\", no fim da página.");
   if (r.foraTemporada) avisos.push(r.foraTemporada + (r.foraTemporada > 1 ? " ligas fora da temporada não foram verificadas." : " liga fora da temporada não foi verificada."));
   if (r.semTime.length) avisos.push("Sem time seu em: " + r.semTime.join(", ") + ".");
+  if (r.ignoradas && r.ignoradas.length) avisos.push("Fora da varredura (eliminado): " + r.ignoradas.join(", ") + ".");
   if (r.erros.length) avisos.push("Não consegui ler: " + r.erros.join(", ") + ".");
   avisos.forEach(a => box.appendChild(el("p", { class: "foot", text: a })));
   const filtroBox = el("label", { class: "op", style: "margin:4px 0 2px" });
@@ -1085,7 +1123,7 @@ function desenharPessoal(r) {
   filtroBox.appendChild(cb); filtroBox.appendChild(el("span", { text: "Mostrar só as ligas com problema" }));
   box.appendChild(filtroBox);
   for (const l of r.ligas) {
-    const frTxt = l.fr ? "franchise: " + l.fr.franquia + (l.fr.bye ? " (bye, isenta)" : " · " + l.fr.validos + " de " + l.fr.min) : "";
+    const frTxt = l.fr ? "franchise: " + l.fr.franquia + (l.fr.empate ? " de bye: empate" : l.fr.bye ? " (bye, isenta)" : " · " + l.fr.validos + " de " + l.fr.min) : "";
     const np = problemas(l).length;
     if (!l.itens.length || (st.pessoalSoProblema && !np)) {
       if (!st.pessoalSoProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || "sem problema" })));
@@ -1422,27 +1460,20 @@ const SLOT_ELEG = { QB: ["QB"], RB: ["RB"], WR: ["WR"], TE: ["TE"], K: ["K"], DE
   DL: ["DL", "DE", "DT"], LB: ["LB"], DB: ["DB", "CB", "S"], IDP_FLEX: ["DL", "LB", "DB", "DE", "DT", "CB", "S"] };
 const SLOT_NOME = { FLEX: "FLEX", WRRB_FLEX: "FLEX RB/WR", REC_FLEX: "FLEX WR/TE", SUPER_FLEX: "SUPERFLEX", IDP_FLEX: "IDP FLEX" };
 const cabeNoSlot = (p, slot) => { const e = SLOT_ELEG[slot]; return !e || posDe(p).some(x => e.includes(x)); };
-// ligas em que a vaga pode ficar vazia quando os jogadores da posição estão de bye
+// Ligas com empate na bye: quando a franquia do time está de bye, o confronto é empate, escalando ou não
+// (Salary Cap, FCL, NFL Full, Clash of Titans e Dynasty 1 e 2). Nessa semana a liga some da varredura.
 const EMPATE_BYE = [/salary/, /\bfcl\b/, /nfl\s*full/, /clash/, /dynasty franchise/];
 const ligaEmpateBye = nome => EMPATE_BYE.some(re => re.test(norm(nome)));
-// spot vazio: tem alguém apto no banco para aquela vaga? Ou os jogadores da posição estão de bye?
-function vaziosDoTime(titulares, roster, rp, ctx, empate) {
-  const banco = bancoDoTime(roster, titulares).map(id => ctx.players[id]).filter(Boolean);
-  const est = p => (ctx.cal[p.team] || "normal");
-  const out = [];
-  titulares.forEach((id, i) => {
-    if (id && id !== "0") return;
-    const slot = rp[i] || "?", rot = SLOT_NOME[slot] || slot;
-    const eleg = banco.filter(p => cabeNoSlot(p, slot));
-    const livres = eleg.filter(p => p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && est(p) === "early") && (!p.injury_status || p.injury_status === "Questionable"));
-    const byes = eleg.filter(p => p.team && est(p) === "bye");
-    if (livres.length) out.push({ txt: "SPOT VAZIO (" + rot + ") COM " + juntar(livres.slice(0, 2).map(nomeDe)) + " DISPONÍVEL NO BANCO" });
-    else if (byes.length) out.push(empate ? { txt: "SPOT VAZIO (" + rot + ") POR BYE: " + juntar(byes.slice(0, 2).map(nomeDe)) + " (PODE FICAR VAZIO NESTA LIGA)", tipo: "info", info: true }
-      : { txt: "SPOT VAZIO (" + rot + ") POR BYE: " + juntar(byes.slice(0, 2).map(nomeDe)) + " (PEGUE ALGUÉM NA WAIVER)", tipo: "warn" });
-    else out.push({ txt: "SPOT VAZIO (" + rot + "), SEM NINGUÉM APTO NO BANCO PARA A VAGA" });
-  });
-  return out;
+// ligas de cap (todas do FBB): não dá para dropar à vontade (multa), então só sugere pegar alguém com vaga livre no elenco
+const ligaCap = nome => /\bfbb\b|\bcap\b/.test(norm(nome));
+function temVagaNoElenco(roster, league) {
+  const lim = ((league && league.roster_positions) || []).filter(x => x !== "IR" && x !== "TAXI").length;
+  const fora = new Set([...(roster.reserve || []), ...(roster.taxi || [])]);
+  return lim > 0 && (roster.players || []).filter(id => !fora.has(id)).length < lim;
 }
+// ligas que não entram mais (time eliminado)
+const IGNORAR_LIGAS = [/corte rapido/];
+const ligaIgnorada = nome => IGNORAR_LIGAS.some(re => re.test(norm(nome)));
 // ---------------------------------------------------------------- waiver: livres com snap subindo
 // Estatísticas de cada semana no Sleeper. Pontos na liga = soma de estatística × peso da própria liga (confere com o Sleeper);
 // snap = snaps do jogador ÷ snaps do time (ataque; defesa para IDP).
@@ -1495,8 +1526,8 @@ function waiverDaLiga(cand, league, rosters, max = 3) {
     if (media > 0) out.push(Object.assign({}, c, { media }));
   }
   out.sort((a, b) => b.media - a.media);
-  return out.slice(0, max).map(c => ({ tipo: "info", info: true, waiver: true,
-    txt: "💡 WAIVER: " + nomeDe(c.p) + " (" + posDe(c.p).join("/") + " · " + c.p.team + ") — MÉDIA " + num(c.media) + " EM " + c.jogos.length + " JOGOS · SNAPS " + c.jogos.map(j => j.snap + "%").join(" → ") }));
+  if (!out.length) return [];
+  return [{ tipo: "neutro", info: true, waiver: true, txt: "💡 WAIVER: " + out.slice(0, max).map(c => nomeDe(c.p) + " " + num(c.media)).join(" · ") }];
 }
 function bancoDoTime(r, titulares) {
   const fora = new Set([...(titulares || []), ...(r.reserve || []), ...(r.taxi || [])]);
