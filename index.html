@@ -160,8 +160,10 @@ input[type=file] { font: 14px var(--body); color: var(--ink); max-width: 100%; }
 .okrow { display: flex; gap: 8px; align-items: baseline; padding: 9px 14px; margin-top: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
 .okrow .okname { font: 700 16px var(--display); text-transform: uppercase; letter-spacing: .02em; flex: 1; min-width: 0; }
 ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
+ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: center; margin: 0 0 4px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .snap { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
 .snap label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+.selw { font: 600 13px var(--body); padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); max-width: 100%; }
 .semana-h { font: 700 15px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 6px; }
 .msg { white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.45 var(--body); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; }
 .msgliga { margin-top: 10px; }
@@ -210,9 +212,8 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
       <label><input id="usarSnap" type="checkbox"> <span id="snapTxt"></span></label>
       <div class="hint">Use na conferência depois que os jogos começam: o status de cada jogador volta a ser o da varredura oficial (a da planilha ou a deste aparelho), então quem ficou OUT depois dela continua contando.</div>
     </div>
-    <label id="box-banco" class="op"><input id="banco" type="checkbox" checked> <span>Reservas fortes (só comissários): aponta até 3 por time, aptos e com média pelo menos
-      <select id="margemBanco" aria-label="Diferença mínima de média"><option value="5">5</option><option value="8" selected>8</option><option value="10">10</option></select>
-      pontos maior que um titular da mesma posição (pontos da própria liga, mínimo 2 jogos). Ficam guardados na varredura oficial e, se continuarem no banco, aparecem na conferência de terça. Não entra na mensagem do grupo.</span></label>
+    <label id="box-banco" class="op"><input id="banco" type="checkbox" checked> <span>Reservas fortes (só comissários): aponta até 3 por time, aptos e com média maior que a do titular da vaga em pelo menos
+      <select id="margemAtaque" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="margemDefesa" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (pontos da própria liga, mínimo 2 jogos). Ficam guardados na varredura oficial e, se continuarem no banco, aparecem na conferência de terça. Não entra na mensagem do grupo.</span></label>
     <div id="box-terca" class="hint" hidden>Confere a escalação final da semana. Os status usados são os da <b>varredura oficial</b> (a da planilha ou a deste aparelho): a de quinta à tarde para os jogos antecipados e a de sábado à noite para os demais. Quem ficar abaixo do mínimo toma W.O.; o resto aparece só como alerta para os comissários analisarem escalação irregular. 🔍 marca o time que deixou no banco um reserva forte apontado na varredura oficial.</div>
     <div id="box-draft" class="meus" hidden>
       <label class="f">Temporada encerrada <input id="temporada" type="number" min="2020" max="2100" value="2026"></label>
@@ -236,12 +237,12 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
     <div id="painel-pessoal" class="meus" hidden>
       <label class="f">Usuário do Sleeper <input id="usuarioP" type="text" value="Apenastraja" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="op"><input id="pFranq" type="checkbox" checked> <span>Conferir as franchises nas minhas ligas franchise (a lista fica em "Minhas ligas franchise", no fim do resultado)</span></label>
-      <label class="op"><input id="pBanco" type="checkbox" checked> <span>Reservas fortes: média pelo menos
-        <select id="pMargem" aria-label="Diferença mínima de média"><option value="5">5</option><option value="8" selected>8</option><option value="10">10</option></select>
-        pontos maior que um titular da mesma posição (lê as semanas anteriores; demora um pouco mais)</span></label>
-      <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver: jogadores livres na liga com snap subindo e pelo menos
+      <label class="op"><input id="pBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
+        <select id="pMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="pMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
+      <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver (até 3 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
+        os melhores da <b>última semana</b>, a melhor média da <b>temporada</b> e quem está com o <b>snap subindo</b> (pelo menos
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
-        dos snaps no último jogo (crescendo pelo menos 15 pontos nos últimos 3 jogos), com a média desses jogos (até 3 por liga; nas ligas de cap, só se o elenco tiver vaga)</span></label>
+        dos snaps no último jogo, crescendo 15 pontos ou mais nos últimos 3)</span></label>
       <label class="op"><input id="pEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana, que já travaram</span></label>
       <label class="op"><input id="pQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
       <div class="toolbar">
@@ -275,7 +276,7 @@ ul.lst li .pos { color: var(--muted); font-size: 12.5px; }
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 25/10/2026 · 2 (banco em cada problema, empate na bye, ligas cap)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 27/10/2026 (irregular na terça, reserva 3/5, waiver semana e temporada)</p>
 </div>
 
 <script>
@@ -440,12 +441,18 @@ function aplicarEstadoNfl(s) {
   if (!s) return;
   const w = parseInt(s.display_week || s.week, 10);
   if (w >= 1 && w <= 18) { st.semanaSleeper = w; if (!st.semanaMexida && w !== st.semana) setSemana(w); }
+  st.semanaNfl = parseInt(s.week, 10) || null;   // na terça o Sleeper já passou "week" para a próxima e mantém a exibida na que acabou
   const t = parseInt(s.league_season || s.season, 10); if (t) { $("temporada").value = String(t); st.temporada = t; }
   st.estadoEm = Date.now();
   atualizarSnapBox();
 }
 async function atualizarEstadoNfl() { try { aplicarEstadoNfl(await getJSON("/state/nfl")); } catch (e) {} }
 async function conferirSemana() { if (!st.semanaSleeper || Date.now() - (st.estadoEm || 0) > 5 * 60 * 1000) await atualizarEstadoNfl(); }
+// última semana com jogos encerrados: na terça e na quarta é a semana exibida; do resto da semana em diante, a anterior
+function ultimaSemanaCompleta(semana) {
+  const w = st.semanaNfl, d = st.semanaSleeper;
+  return w && d ? (w > d ? d : d - 1) : semana - 1;
+}
 const avisoSemana = w => st.semanaSleeper && w !== st.semanaSleeper ? "Atenção: esta é a semana " + w + ", escolhida à mão. A semana atual no Sleeper é a " + st.semanaSleeper + "." : "";
 
 // ---------------------------------------------------------------- dados
@@ -1008,13 +1015,21 @@ async function rodarPessoal() {
     const { cfg, faltando } = configMinhas(ativas);
     const conferirFr = $("pFranq").checked, banco = $("pBanco").checked;
     const waiver = $("pWaiver").checked ? { limiar: parseInt($("pSnap").value, 10) || 30 } : null;
-    let cand = null;
+    let base = null;
     if (waiver) {
-      status("Lendo as estatísticas das últimas semanas (snaps)…");
-      try { cand = await candidatosWaiver(temporada, semana, players, waiver.limiar); waiver.semanas = cand.semanas; } catch (e) { waiver.erro = e.message; }
+      status("Lendo as estatísticas da temporada (pontos e snaps)…");
+      try {
+        const ultima = Math.max(0, Math.min(18, ultimaSemanaCompleta(semana)));
+        const semanas = Array.from({ length: ultima }, (_, i) => i + 1);
+        const stats = await Promise.all(semanas.map(w => statsDaSemana(temporada, w)));
+        const ids = new Set(); stats.forEach(S => Object.keys(S || {}).forEach(id => ids.add(id)));
+        const cand = await candidatosWaiver(temporada, ultima + 1, players, waiver.limiar);
+        base = { semanas, stats, ids, cand };
+        Object.assign(waiver, { semanas: cand.semanas, ultima: semanas[semanas.length - 1] || null, nSemanas: semanas.length });
+      } catch (e) { waiver.erro = e.message; }
     }
     const ctx = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
-      statusDe: (id, p) => (p && p.injury_status) || null, margemBanco: parseInt($("pMargem").value, 10) || 8 };
+      statusDe: (id, p) => (p && p.injury_status) || null, margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
       cfg, faltando, conferirFr, banco, waiver, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
     let feitas = 0;
@@ -1066,8 +1081,8 @@ async function rodarPessoal() {
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
           sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
-        if (cand && (!cap || temVaga)) waiverDaLiga(cand, league, rosters).forEach(x => itens.push(x));   // liga cap: só com vaga livre no elenco
-        res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr });
+        const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
+        res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv });
       } catch (e) { res.erros.push(lg.name); }
       feitas++; status("Lendo ligas… " + feitas + "/" + ativas.length);
     });
@@ -1086,15 +1101,21 @@ function textoPessoal(r) {
   const linhas = ["*MEUS TIMES — SEMANA " + r.semana + "*", ""];
   if (!com.length) linhas.push("✅ Nenhum problema nas escalações.");
   com.forEach(l => linhas.push("• " + l.nome + ": " + juntar(problemas(l).map(i => i.txt))));
-  const dicas = r.ligas.filter(l => l.itens.some(i => i.waiver));
-  if (dicas.length) { linhas.push("", "💡 *NA WAIVER*"); dicas.forEach(l => linhas.push("• " + l.nome + ": " + l.itens.filter(i => i.waiver).map(i => i.txt.replace(/^💡 WAIVER: /, "")).join("; "))); }
+  const dicas = r.ligas.map(l => [l, linhaWaiver(l, r)]).filter(x => x[1]);
+  if (dicas.length) { linhas.push("", "💡 *NA WAIVER — " + MODOS_WAIVER.find(m => m[0] === modoWaiver())[1].toUpperCase() + "*"); dicas.forEach(([l, w]) => linhas.push("• " + l.nome + ": " + w.txt.replace(/^💡 WAIVER · [^:]+: /, ""))); }
   linhas.push("", "Verificado em " + r.quando + " (" + r.ligas.length + " ligas)");
   return linhas.join("\n");
 }
 function desenharPessoal(r) {
   const box = $("resultado"); box.textContent = "";
   const com = r.ligas.filter(l => problemas(l).length);
-  const comWaiver = r.ligas.filter(l => l.itens.some(i => i.waiver)).length;
+  const comWaiver = r.ligas.filter(l => linhaWaiver(l, r)).length;
+  let selW = null;
+  if (r.waiver && !r.waiver.erro) {
+    selW = el("select", { "aria-label": "O que mostrar na waiver", class: "selw" });
+    MODOS_WAIVER.forEach(([v, rot]) => { const o = el("option", { value: v }, rot); if (v === modoWaiver()) o.selected = true; selW.appendChild(o); });
+    selW.addEventListener("change", () => { st.waiverModo = selW.value; armazenar.set("bfa-waiver-modo", selW.value); desenharPessoal(r); });
+  }
   const abaixo = r.ligas.filter(l => l.itens.some(i => i.abaixo)).length;
   const comBanco = r.ligas.filter(l => l.itens.some(i => i.banco)).length;
   const fb = el("span", { class: "copied" });
@@ -1105,9 +1126,11 @@ function desenharPessoal(r) {
     el("span", { class: "pill " + (com.length ? "wo" : "ok"), text: com.length + " de " + r.ligas.length + " ligas com problema" }),
     r.conferirFr ? el("span", { class: "pill wo", text: abaixo + " abaixo do mínimo de franchises" }) : null,
     r.banco ? el("span", { class: "pill warn", text: "🔍 " + comBanco + " com reserva forte no banco" }) : null,
-    r.waiver ? el("span", { class: "pill info", text: "💡 " + comWaiver + " com dica de waiver" }) : null,
+    r.waiver ? el("span", { class: "pill info", text: "💡 " + comWaiver + " com dica de waiver" }) : null, selW,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
-  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise): livres na liga com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo (15 pontos ou mais desde o primeiro dos 3 jogos), com a média; nas ligas de cap só aparece se o seu elenco tiver vaga. Média dos jogos das semanas " + r.waiver.semanas.join(", ") + " (pontuação de cada liga)." }));
+  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga; nas ligas de cap só aparece se o seu elenco tiver vaga): " +
+    { semana: "os 3 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
+      snap: "livres com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo 15 pontos ou mais nas semanas " + r.waiver.semanas.join(", ") + ", pela média desses jogos." }[modoWaiver()] }));
   if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "Não consegui ler as estatísticas para a waiver: " + r.waiver.erro + "." }));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
   const avisos = [];
@@ -1124,13 +1147,13 @@ function desenharPessoal(r) {
   box.appendChild(filtroBox);
   for (const l of r.ligas) {
     const frTxt = l.fr ? "franchise: " + l.fr.franquia + (l.fr.empate ? " de bye: empate" : l.fr.bye ? " (bye, isenta)" : " · " + l.fr.validos + " de " + l.fr.min) : "";
-    const np = problemas(l).length;
-    if (!l.itens.length || (st.pessoalSoProblema && !np)) {
+    const np = problemas(l).length, its = itensComWaiver(l, r);
+    if (!its.length || (st.pessoalSoProblema && !np)) {
       if (!st.pessoalSoProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || "sem problema" })));
       continue;
     }
     const ul = el("ul", { class: "lst" });
-    l.itens.forEach(i => {
+    its.forEach(i => {
       const li = el("li", { class: i.tipo || (/QUESTIONABLE$/.test(i.txt) ? "warn" : "wo") }, i.txt);
       if (i.pos) { li.appendChild(document.createTextNode(" ")); li.appendChild(el("span", { class: "pos", text: "(" + i.pos + ")" })); }
       ul.appendChild(li);
@@ -1512,23 +1535,51 @@ async function candidatosWaiver(temporada, semana, players, limiar) {
   }
   return { semanas, lista };
 }
-// os melhores candidatos que estão livres nesta liga e cabem numa vaga titular dela
-function waiverDaLiga(cand, league, rosters, max = 3) {
-  if (!cand || !cand.lista.length || !league) return [];
-  const sc = league.scoring_settings || {};
+// livres na liga (sem dono, aptos, que cabem numa vaga titular dela); sem K e DEF
+function livresDaLiga(league, rosters, players) {
   const rp = (league.roster_positions || []).filter(x => SLOT_ELEG[x]);
   const ocupados = new Set();
   (rosters || []).forEach(r => [...(r.players || []), ...(r.taxi || []), ...(r.reserve || [])].forEach(id => ocupados.add(id)));
-  const out = [];
-  for (const c of cand.lista) {
-    if (ocupados.has(c.id) || !rp.some(slot => cabeNoSlot(c.p, slot))) continue;
-    const media = c.jogos.reduce((a, j) => a + pontosNaLiga(j.stt, sc), 0) / c.jogos.length;
-    if (media > 0) out.push(Object.assign({}, c, { media }));
-  }
-  out.sort((a, b) => b.media - a.media);
-  if (!out.length) return [];
-  return [{ tipo: "neutro", info: true, waiver: true, txt: "💡 WAIVER: " + out.slice(0, max).map(c => nomeDe(c.p) + " " + num(c.media)).join(" · ") }];
+  return id => {
+    const p = players[id]; if (!p || !p.team || ocupados.has(id)) return null;
+    if (p.injury_status && p.injury_status !== "Questionable") return null;
+    const pos = posDe(p); if (!pos.length || pos.includes("K") || pos.includes("DEF")) return null;
+    return rp.some(sl => cabeNoSlot(p, sl)) ? p : null;
+  };
 }
+// as três leituras da waiver de uma liga (pontuação da própria liga):
+// semana = pontos na última semana; temporada = média por jogo (com pelo menos metade dos jogos); snap = snap subindo
+function opcoesWaiver(base, league, rosters, players, max = 3) {
+  if (!league) return null;
+  const livre = livresDaLiga(league, rosters, players), sc = league.scoring_settings || {};
+  const top = arr => arr.sort((a, b) => b.valor - a.valor).slice(0, max).map(x => ({ nome: nomeDe(x.p), valor: x.valor, jogos: x.jogos }));
+  const snap = [];
+  for (const c of (base.cand ? base.cand.lista : [])) {
+    const p = livre(c.id); if (!p) continue;
+    const m = c.jogos.reduce((a, j) => a + pontosNaLiga(j.stt, sc), 0) / c.jogos.length;
+    if (m > 0) snap.push({ p, valor: m, jogos: c.jogos.length });
+  }
+  const ult = base.stats[base.stats.length - 1] || {}, semana = [];
+  for (const id in ult) { const p = livre(id); if (!p) continue; const v = pontosNaLiga(ult[id], sc); if (v > 0) semana.push({ p, valor: v, jogos: 1 }); }
+  const temporada = [], minJ = Math.max(2, Math.ceil(base.stats.length / 2));
+  for (const id of base.ids) {
+    const p = livre(id); if (!p) continue;
+    let soma = 0, j = 0;
+    base.stats.forEach(S => { const v = S && S[id]; if (!v || !(v.gp || v.off_snp || v.def_snp)) return; soma += pontosNaLiga(v, sc); j++; });
+    if (j >= minJ && soma > 0) temporada.push({ p, valor: soma / j, jogos: j });
+  }
+  return { snap: top(snap), semana: top(semana), temporada: top(temporada) };
+}
+const MODOS_WAIVER = [["semana", "Melhores da última semana"], ["temporada", "Melhor média da temporada"], ["snap", "Snap subindo"]];
+function modoWaiver() { return st.waiverModo || armazenar.get("bfa-waiver-modo") || "semana"; }
+// a linha branca da waiver de uma liga, no modo escolhido
+function linhaWaiver(l, r) {
+  const m = modoWaiver(), lst = l.waiver && l.waiver[m];
+  if (!lst || !lst.length) return null;
+  const rot = m === "semana" ? "ÚLTIMA SEMANA" + (r.waiver && r.waiver.ultima ? " (S" + r.waiver.ultima + ")" : "") : m === "temporada" ? "TEMPORADA" : "SNAP SUBINDO";
+  return { tipo: "neutro", info: true, waiver: true, txt: "💡 WAIVER · " + rot + ": " + lst.map(x => x.nome + " " + num(x.valor) + (m === "temporada" ? " (" + x.jogos + " J)" : "")).join(" · ") };
+}
+const itensComWaiver = (l, r) => { const w = linhaWaiver(l, r); return w ? l.itens.concat([w]) : l.itens; };
 function bancoDoTime(r, titulares) {
   const fora = new Set([...(titulares || []), ...(r.reserve || []), ...(r.taxi || [])]);
   return (r.players || []).filter(id => id && id !== "0" && !fora.has(id));
@@ -1545,7 +1596,8 @@ function mediasDaLiga(semanasMatchups) {
 // reservas fortes antes do jogo: jogador apto com média bem maior que um titular da mesma posição (até 3 por time)
 // folga = quantos franchises dá para tirar sem ficar abaixo do mínimo (0 = nenhum; sem franquia conhecida = Infinity)
 function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp = null) {
-  const margem = ctx.margemBanco || 8;
+  // diferença mínima de média: 3 no ataque e 5 na defesa (IDP), a não ser que se escolha outra
+  const margemDe = (slot, pS) => (slot ? SLOTS_IDP.has(slot) : ehIdp(pS)) ? (ctx.margemDefesa ?? ctx.margemBanco ?? 5) : (ctx.margemAtaque ?? ctx.margemBanco ?? 3);
   const aptos = bancoDoTime(r, titulares).filter(id => {
     const p = ctx.players[id]; if (!p || !p.team || !noEscopo(p)) return false;
     if ((ctx.cal[p.team] || "normal") === "bye") return false;
@@ -1560,7 +1612,7 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     const pS = ctx.players[sId]; if (!pS || !pS.team || !noEscopo(pS) || medias[sId] == null) continue;
     if ((ctx.cal[pS.team] || "normal") === "bye") continue;
     const sS = ctx.statusDe(sId, pS); if (sS && sS !== "Questionable") continue;
-    let melhor = null;
+    let melhor = null; const margem = margemDe(slot, pS);
     for (const bId of aptos) {
       const pB = ctx.players[bId];
       if (pS.team === sig && pB.team !== sig && !(folga > 0)) continue;   // só tira franchise se estiver acima do mínimo
@@ -3081,12 +3133,22 @@ function fraseWO(t) {
   const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
   return "@" + t.gm + " (" + t.franquia + ") FICOU COM " + t.validos + " FRANCHISES" + (ruins.length ? " POIS " + juntar(ruins) + " NA VARREDURA" : " ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "");
 }
+// escalações irregulares marcadas pelos comissários na terça (guardadas neste aparelho, por semana)
+const chaveIrr = semana => "bfa-irr-" + temporadaAtual() + "-" + semana;
+const irregularMarcada = (semana, ligaId, franquia) => ((armazenar.get(chaveIrr(semana)) || {})[ligaId] || []).includes(franquia);
+function marcarIrregular(semana, ligaId, franquia, sim) {
+  const m = armazenar.get(chaveIrr(semana)) || {}; const l = new Set(m[ligaId] || []);
+  if (sim) l.add(franquia); else l.delete(franquia);
+  m[ligaId] = [...l]; armazenar.set(chaveIrr(semana), m);
+}
+const irregularesDa = (res, ctx) => res.times.filter(t => t.alertas && t.alertas.length && irregularMarcada(ctx.semana, res.liga.id, t.franquia));
 function mensagemWO(res, ctx) {
-  const L = res.liga; const wo = res.times.filter(t => t.wo);
+  const L = res.liga; const wo = res.times.filter(t => t.wo); const irr = irregularesDa(res, ctx);
   const linhas = ["*W.O. SEMANA " + ctx.semana + " — " + L.nome.toUpperCase() + "* (mínimo " + L.min + " franchises)", ""];
   if (wo.length) { linhas.push("❌ W.O.:"); wo.forEach(t => linhas.push("• " + fraseWO(t))); }
   else linhas.push("✅ Nenhum W.O. nesta semana.");
   linhas.push("");
+  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas))); linhas.push(""); }
   const bye = res.times.filter(t => t.bye).map(t => t.franquia).sort();
   if (bye.length) linhas.push("Bye (isentos): " + bye.join(", "));
   linhas.push("Conferência feita em " + ctx.quando);
@@ -3105,36 +3167,46 @@ function textoAlertas(resultados, ctx, titulo) {
   return linhas.join("\n");
 }
 // W.O. para a aba Registro da planilha (botão "Lançar W.O. no Registro")
-function linhasLancar(resultados) {
+function linhasLancar(resultados, ctx) {
   const out = [];
   for (const r of resultados) for (const t of r.times) if (t.wo) {
     const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
     out.push({ liga: r.liga.nome, time: t.franquia, tipo: "WO", gm: t.gm, escaladas: t.validos,
       detalhe: (ruins.length ? juntar(ruins) + " NA VARREDURA" : t.validos + " FRANCHISES ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") });
   }
+  if (ctx) for (const r of resultados) for (const t of irregularesDa(r, ctx))
+    out.push({ liga: r.liga.nome, time: t.franquia, tipo: "Escalação irregular", gm: t.gm, detalhe: juntar(t.alertas) });
   return out;
+}
+function rotuloLancar(linhas) {
+  if (!linhas.length) return "Nada para lançar no Registro";
+  const nWo = linhas.filter(l => l.tipo === "WO").length, nIrr = linhas.length - nWo;
+  return nIrr ? "Lançar " + linhas.length + " no Registro (" + nWo + " W.O. + " + nIrr + (nIrr > 1 ? " irregulares)" : " irregular)") : "Lançar " + nWo + " W.O. no Registro";
 }
 async function lancarRegistro(ctx, linhas, b, msg) {
   if (b.dataset.conf !== "1") {
-    b.dataset.conf = "1"; b.textContent = "Confirmar: lançar " + linhas.length + " W.O. da semana " + ctx.semana + " no Registro";
+    b.dataset.conf = "1"; b.textContent = "Confirmar: lançar " + linhas.length + (linhas.some(l => l.tipo !== "WO") ? " linhas" : " W.O.") + " da semana " + ctx.semana + " no Registro";
     msg.className = "status"; msg.textContent = "Vai escrever na aba Registro da planilha; o que já estiver lá não repete.";
     return;
   }
   b.disabled = true; b.textContent = "Lançando…"; msg.className = "status"; msg.textContent = "";
   try {
     const r = await planilha("lancarWO", { semana: ctx.semana, linhas, quem: nomeComissario() });
-    b.textContent = ctx.woLancado = "W.O. lançados no Registro ✓";
+    b.textContent = ctx.woLancado = (linhas.some(l => l.tipo !== "WO") ? "W.O. e irregulares" : "W.O.") + " lançados no Registro ✓";
     const ls = r.linhas || [];
     msg.textContent = r.inseridas + (r.inseridas === 1 ? " linha nova" : " linhas novas") + (ls.length ? " (" + (ls.length > 1 ? "linhas " + ls[0] + " a " + ls[ls.length - 1] : "linha " + ls[0]) + ")" : "") +
       (r.repetidas ? "; " + r.repetidas + " já " + (r.repetidas > 1 ? "estavam" : "estava") + " lá" : "") + ".";
   } catch (e) {
-    b.disabled = false; b.dataset.conf = ""; b.textContent = "Lançar " + linhas.length + " W.O. no Registro"; msg.className = "status err";
+    b.disabled = false; b.dataset.conf = ""; b.textContent = rotuloLancar(linhas); msg.className = "status err";
     msg.textContent = e.message === "senha" ? "Falta a senha neste aparelho: digite na aba Varreduras oficiais." : "Não consegui lançar: " + e.message + ".";
   }
 }
 function linhasRegistro(resultados, ctx) {
   const out = [];
-  for (const r of resultados) for (const t of r.times) if (t.wo) out.push([ctx.semana, r.liga.nome, t.franquia, "WO", t.gm].join("\t"));
+  for (const r of resultados) {
+    for (const t of r.times) if (t.wo) out.push([ctx.semana, r.liga.nome, t.franquia, "WO", t.gm].join("\t"));
+    for (const t of irregularesDa(r, ctx)) out.push([ctx.semana, r.liga.nome, t.franquia, "Escalação irregular", t.gm].join("\t"));
+  }
   return out.join("\n");
 }
 function desenharTerca(resultados, ctx) {
@@ -3156,9 +3228,9 @@ function desenharTerca(resultados, ctx) {
   // com a planilha ligada, os W.O. vão direto para a aba Registro
   let b4 = null, m4 = null;
   if (naPlanilha.length && urlPlanilha()) {
-    const linhas = linhasLancar(naPlanilha);
+    const linhas = linhasLancar(naPlanilha, ctx);
     m4 = el("span", { class: "status", role: "status" });
-    b4 = el("button", { class: "btn ghost", type: "button" }, ctx.woLancado || (linhas.length ? "Lançar " + linhas.length + " W.O. no Registro" : "Nenhum W.O. para lançar"));
+    b4 = el("button", { class: "btn ghost", type: "button" }, ctx.woLancado || rotuloLancar(linhas));
     b4.disabled = !linhas.length || !!ctx.woLancado;
     b4.addEventListener("click", () => lancarRegistro(ctx, linhas, b4, m4));
   }
@@ -3166,6 +3238,7 @@ function desenharTerca(resultados, ctx) {
     el("span", { class: "count", text: "Semana " + ctx.semana }),
     el("span", { class: "pill wo", text: totWO + " W.O." }),
     el("span", { class: "pill info", text: totAl + " times para analisar" }),
+    el("span", { class: "pill warn", text: resultados.reduce((s, r) => s + irregularesDa(r, ctx).length, 0) + " escalação irregular marcada" }),
     el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
   if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
@@ -3181,9 +3254,20 @@ function desenharTerca(resultados, ctx) {
     if (wo.length) { const ul = el("ul", { class: "lst" }); wo.forEach(t => ul.appendChild(el("li", { class: "wo" }, fraseWO(t)))); body.appendChild(ul); }
     else if (!r.erro) body.appendChild(el("div", { class: "pill ok", text: "Nenhum W.O." }));
     if (al.length) {
-      body.appendChild(el("div", { class: "foot", text: "Para análise (só comissários): pode caber escalação irregular" }));
+      body.appendChild(el("div", { class: "foot", text: "Para análise (só comissários): marque \"irregular\" em quem se enquadra; entra na mensagem de W.O. e no Registro" }));
       const ul2 = el("ul", { class: "lst" });
-      al.forEach(t => ul2.appendChild(el("li", { class: t.reservaForte ? "warn" : "info" }, (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas))));
+      al.forEach(t => {
+        const marcada = irregularMarcada(ctx.semana, r.liga.id, t.franquia);
+        const cb = el("input", { type: "checkbox", "aria-label": "Escalação irregular: " + t.franquia + " em " + r.liga.nome });
+        cb.checked = marcada;
+        cb.addEventListener("change", () => {
+          marcarIrregular(ctx.semana, r.liga.id, t.franquia, cb.checked); ctx.woLancado = null;
+          const y = window.scrollY; desenharTerca(resultados, ctx); window.scrollTo(0, y);
+        });
+        ul2.appendChild(el("li", { class: marcada ? "wo" : t.reservaForte ? "warn" : "info" },
+          el("label", { class: "marca" }, cb, el("span", { text: "irregular" })),
+          (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas)));
+      });
       body.appendChild(ul2);
     }
     if (r.liga.formacao && r.times.length) body.appendChild(blocoFormacao(r));
@@ -3191,7 +3275,8 @@ function desenharTerca(resultados, ctx) {
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }),
         el("div", { class: "toolbar", style: "margin-top:4px" },
           el("span", { class: "pill " + (wo.length ? "wo" : "ok"), text: wo.length + " W.O." }),
-          el("span", { class: "pill info", text: al.length + " para analisar" }))),
+          el("span", { class: "pill info", text: al.length + " para analisar" }),
+          irregularesDa(r, ctx).length ? el("span", { class: "pill warn", text: irregularesDa(r, ctx).length + " irregular" }) : null)),
         el("div", { class: "toolbar" }, bc, fb2)), body));
   }
 }
@@ -3344,7 +3429,7 @@ async function rodar() {
     const statusDe = snap ? (id) => snap.s[id] || null : (id, p) => p.injury_status || null;
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const ctx = { modo: st.modo, semana, cal: st.cal, players, statusDe, quando, usandoSnap: snap ? snap.quando : null, outros: $("outros").checked, banco: $("banco").checked, margemBanco: parseInt($("margemBanco").value, 10) || 8 };
+    const ctx = { modo: st.modo, semana, cal: st.cal, players, statusDe, quando, usandoSnap: snap ? snap.quando : null, outros: $("outros").checked, banco: $("banco").checked, margemAtaque: parseInt($("margemAtaque").value, 10) || 3, margemDefesa: parseInt($("margemDefesa").value, 10) || 5 };
     const resultados = [];
     let feitas = 0;
     await Promise.all(ligas.map(async (liga) => {
