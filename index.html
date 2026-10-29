@@ -276,7 +276,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 27/10/2026 (irregular na terça, reserva 3/5, waiver semana e temporada)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 29/10/2026 (terça usa o time de cada jogador na rodada)</p>
 </div>
 
 <script>
@@ -3124,7 +3124,7 @@ function avaliarTerca(liga, dados, ctx) {
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
     if (formacao && !formacao.ok) alertas.push(descFormacao(formacao));
     const avisado = (ctx.flags[liga.id] || []).includes(f);
-    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, formacao, foraFormacao: !!(formacao && !formacao.ok), reservaForte: ficaram.length > 0 });
+    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte: ficaram.length > 0 });
   }
   times.sort((a, b) => a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
   return { liga, times, avisos, terca: true };
@@ -3242,6 +3242,9 @@ function desenharTerca(resultados, ctx) {
     el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
   if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
+  const trocEsc = (ctx.trocados || []).filter(x => resultados.some(r => r.times.some(t => (t.titulares || []).includes(x.id))));
+  if (trocEsc.length) box.appendChild(el("p", { class: "foot", text: "Trocados depois da rodada (contam pelo time em que jogaram a semana " + ctx.semana + "): " +
+    trocEsc.map(x => x.nome + " pelo " + x.naRodada + " (hoje " + x.hoje + ")").join(", ") + "." }));
   if (b3) box.appendChild(el("p", { class: "foot", text: b4 ? "\"Lançar W.O. no Registro\" escreve direto na aba Registro da planilha (semana, liga, time, tipo, GM, franchises escaladas e o motivo) e não repete o que já estiver lá. \"Copiar W.O. para a planilha\" continua servindo para colar à mão." : "\"Copiar W.O. para a planilha\" copia Semana, Liga, Time, Tipo e GM: cole na primeira linha vazia da aba Registro, na coluna Semana." }));
   for (const r of resultados) {
     const wo = r.times.filter(t => t.wo), al = r.times.filter(t => t.alertas.length);
@@ -3468,10 +3471,34 @@ async function rodar() {
   } finally { btn.disabled = false; }
 }
 
+// Time de cada jogador NA RODADA (estatísticas da semana no Sleeper). Quem foi trocado depois da rodada
+// (ex.: DeForest Buckner, do IND para o SF na terça) conta pelo time em que jogou aquela semana.
+const TIMES_RODADA = {};
+async function timesDaRodada(temporada, semana) {
+  const k = temporada + "-" + semana;
+  if (TIMES_RODADA[k] && Date.now() - TIMES_RODADA[k].em > 10 * 60 * 1000) delete TIMES_RODADA[k];   // relê a cada 10 min
+  if (!TIMES_RODADA[k]) TIMES_RODADA[k] = fetch("https://api.sleeper.com/stats/nfl/" + temporada + "/" + semana + "?season_type=regular", { cache: "no-store" })
+    .then(r => { if (!r.ok) throw new Error("respondeu " + r.status); return r.json(); })
+    .then(arr => { const m = {}; (arr || []).forEach(x => { if (x && x.player_id && x.team) m[x.player_id] = x.team; }); return m; });
+  TIMES_RODADA[k].em = Date.now();
+  try { return await TIMES_RODADA[k]; } catch (e) { delete TIMES_RODADA[k]; throw e; }
+}
+function comTimesDaRodada(players, times) {
+  const out = Object.assign({}, players), trocados = [];
+  for (const id in times) {
+    const p = players[id]; if (!p || times[id] === p.team) continue;
+    out[id] = Object.assign({}, p, { team: times[id] });
+    trocados.push({ id, nome: nomeDe(p), naRodada: times[id], hoje: p.team || "sem time" });
+  }
+  return { players: out, trocados };
+}
 async function rodarTerca(ligas, grupo, semana, btn, status) {
   btn.disabled = true; status("Conferindo a rodada…");
   try {
-    const players = await carregarJogadores(status);
+    const playersHoje = await carregarJogadores(status);
+    let players = playersHoje, trocados = [], erroTimes = null;
+    try { ({ players, trocados } = comTimesDaRodada(playersHoje, await timesDaRodada(temporadaAtual(), semana))); }
+    catch (e) { erroTimes = e.message; }
     const [oE, oD] = await Promise.all([snapOficial(semana, "early", grupo), snapOficial(semana, "dom", grupo)]);
     const sE = oE.snap, sD = oD.snap;
     const onde = urlPlanilha() ? "(nem na planilha nem neste aparelho)" : "neste aparelho";
@@ -3489,7 +3516,8 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const fontes = [sE && "quinta: varredura oficial de " + sE.quando + " (" + sE.fonte + ")", sD && "sábado: varredura oficial de " + sD.quando + " (" + sD.fonte + ")"].filter(Boolean);
-    const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas, fontes };
+    if (erroTimes) avisosSnap.push("Não consegui ler o time de cada jogador na rodada (" + erroTimes + "): usei o time atual, então quem foi trocado depois da rodada pode contar errado.");
+    const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas, fontes, trocados };
     const resultados = []; let feitas = 0;
     await Promise.all(ligas.map(async (liga) => {
       try {
