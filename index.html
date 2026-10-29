@@ -276,7 +276,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 29/10/2026 (terça usa o time de cada jogador na rodada)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 29/10/2026 (terça abre na última rodada encerrada)</p>
 </div>
 
 <script>
@@ -440,8 +440,8 @@ function atualizarSnapBox() {
 function aplicarEstadoNfl(s) {
   if (!s) return;
   const w = parseInt(s.display_week || s.week, 10);
-  if (w >= 1 && w <= 18) { st.semanaSleeper = w; if (!st.semanaMexida && w !== st.semana) setSemana(w); }
   st.semanaNfl = parseInt(s.week, 10) || null;   // na terça o Sleeper já passou "week" para a próxima e mantém a exibida na que acabou
+  if (w >= 1 && w <= 18) { st.semanaSleeper = w; const alvo = semanaAlvo(); if (!st.semanaMexida && alvo !== st.semana) setSemana(alvo); }
   const t = parseInt(s.league_season || s.season, 10); if (t) { $("temporada").value = String(t); st.temporada = t; }
   st.estadoEm = Date.now();
   atualizarSnapBox();
@@ -453,7 +453,13 @@ function ultimaSemanaCompleta(semana) {
   const w = st.semanaNfl, d = st.semanaSleeper;
   return w && d ? (w > d ? d : d - 1) : semana - 1;
 }
-const avisoSemana = w => st.semanaSleeper && w !== st.semanaSleeper ? "Atenção: esta é a semana " + w + ", escolhida à mão. A semana atual no Sleeper é a " + st.semanaSleeper + "." : "";
+// semana certa para a tela: a conferência de terça é sempre da última rodada encerrada; o resto segue a semana exibida no Sleeper
+function semanaAlvo() {
+  if (!st.semanaSleeper) return null;
+  const terca = st.modo === "terca" && !["meus", "pessoal", "oficiais"].includes(st.grupo);
+  return terca ? Math.max(1, ultimaSemanaCompleta(st.semanaSleeper)) : st.semanaSleeper;
+}
+const avisoSemana = w => { const a = semanaAlvo(); return a && w !== a ? "Atenção: esta é a semana " + w + ", escolhida à mão. A semana atual no Sleeper é a " + a + "." : ""; };
 
 // ---------------------------------------------------------------- dados
 async function getJSON(path) {
@@ -1441,6 +1447,7 @@ function desenharOficiais() {
   }
 }
 function aplicarPainel() {
+  const alvo = semanaAlvo(); if (!st.semanaMexida && alvo && alvo !== st.semana) setSemana(alvo);   // terça = última rodada encerrada
   const g = GRUPOS.find(x => x.id === st.grupo);
   const travado = travadoAgora(g);
   const pess = st.grupo === "pessoal";
@@ -3454,6 +3461,7 @@ async function rodar() {
     resultados.sort((a, b) => LIGAS.indexOf(a.liga) - LIGAS.indexOf(b.liga));
     if (!snap) { // status de todos os jogadores com lesão neste momento; vira "oficial" só se o comissário marcar
       const s = {}; for (const [id, p] of Object.entries(players)) if (p && p.injury_status) s[id] = p.injury_status;
+      const timesSnap = {}; for (const [id, p] of Object.entries(players)) if (p && p.team) timesSnap[p.team] = (timesSnap[p.team] ? timesSnap[p.team] + "," : "") + id;   // time de cada um na hora da varredura (por time, para ocupar pouco)
       const flag = {}; resultados.forEach(r => { flag[r.liga.id] = r.times.filter(t => t.abaixo || t.irregular).map(t => t.franquia); });
       let reservas = null;
       if (ctx.banco) { reservas = {}; resultados.forEach(r => { const m = {}; r.times.forEach(t => { if (t.reservas && t.reservas.length) m[t.franquia] = t.reservas.map(x => ({ id: x.id, nome: x.nome, media: x.media })); }); reservas[r.liga.id] = m; }); }
@@ -3461,7 +3469,7 @@ async function rodar() {
         abaixo: r.times.filter(t => t.abaixo).length, irregular: r.times.filter(t => !t.abaixo && t.irregular).length, fora: r.times.filter(t => t.foraFormacao).length }));
       const gN = GRUPOS.find(x => x.id === grupo); const temporada = temporadaAtual();
       ctx.oficial = { v: 1, id: idOficial(temporada, semana, modo, grupo), temporada, semana, modo, grupo, grupoNome: gN ? gN.nome : grupo,
-        quando, s, flag, reservas, ligas: ligasMsg };
+        quando, s, flag, reservas, ligas: ligasMsg, times: timesSnap };
     }
     st.res[grupo] = { tipo: "varredura", resultados, ctx }; st.filtro[grupo] = null;
     if (st.grupo === grupo) desenharResultado(resultados, ctx);
@@ -3496,9 +3504,8 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
   btn.disabled = true; status("Conferindo a rodada…");
   try {
     const playersHoje = await carregarJogadores(status);
-    let players = playersHoje, trocados = [], erroTimes = null;
-    try { ({ players, trocados } = comTimesDaRodada(playersHoje, await timesDaRodada(temporadaAtual(), semana))); }
-    catch (e) { erroTimes = e.message; }
+    let timesR = null, erroTimes = null;
+    try { timesR = await timesDaRodada(temporadaAtual(), semana); } catch (e) { erroTimes = e.message; }
     const [oE, oD] = await Promise.all([snapOficial(semana, "early", grupo), snapOficial(semana, "dom", grupo)]);
     const sE = oE.snap, sD = oD.snap;
     const onde = urlPlanilha() ? "(nem na planilha nem neste aparelho)" : "neste aparelho";
@@ -3516,7 +3523,14 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const fontes = [sE && "quinta: varredura oficial de " + sE.quando + " (" + sE.fonte + ")", sD && "sábado: varredura oficial de " + sD.quando + " (" + sD.fonte + ")"].filter(Boolean);
-    if (erroTimes) avisosSnap.push("Não consegui ler o time de cada jogador na rodada (" + erroTimes + "): usei o time atual, então quem foi trocado depois da rodada pode contar errado.");
+    // time de cada jogador na rodada: estatísticas da semana; se não der, o time guardado na varredura oficial; por último, o atual
+    const timesSnap = {}; [sE, sD].forEach(x => Object.entries((x && x.times) || {}).forEach(([t, ids]) => String(ids).split(",").forEach(id => { if (id) timesSnap[id] = t; })));
+    const semJogos = timesR && !Object.keys(timesR).length;
+    const usar = timesR && !semJogos ? timesR : Object.keys(timesSnap).length ? timesSnap : null;
+    const { players, trocados } = usar ? comTimesDaRodada(playersHoje, usar) : { players: playersHoje, trocados: [] };
+    if (semJogos) avisosSnap.push("A semana " + semana + " ainda não tem jogos encerrados no Sleeper. A conferência de terça é da rodada que acabou: confira a semana escolhida.");
+    else if (erroTimes) avisosSnap.push("Não consegui ler o time de cada jogador na rodada (" + erroTimes + ")" + (usar ? ": usei o time guardado na varredura oficial." : ": usei o time atual, então quem foi trocado depois da rodada pode contar errado."));
+    if (usar && !(timesR && !semJogos)) fontes.push("time de cada jogador: o da varredura oficial");
     const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas, fontes, trocados };
     const resultados = []; let feitas = 0;
     await Promise.all(ligas.map(async (liga) => {
@@ -3577,7 +3591,7 @@ $("planilha").addEventListener("change", async () => {
     for (const gid of ["bfa", "cap"]) { const r = st.res[gid]; if (r && r.tipo === "draft") { r.resultados.forEach(recalcularDraft); if (st.grupo === gid) desenharDraft(r.resultados); } }
   } catch (e) { msg("Não consegui ler a planilha: " + e.message + "."); }
 });
-$("semana").addEventListener("change", () => { const w = parseInt($("semana").value, 10); if (w >= 1 && w <= 18) { st.semanaMexida = !!st.semanaSleeper && w !== st.semanaSleeper; setSemana(w); } });
+$("semana").addEventListener("change", () => { const w = parseInt($("semana").value, 10); if (w >= 1 && w <= 18) { st.semanaMexida = !!st.semanaSleeper && w !== semanaAlvo(); setSemana(w); } });
 $("rodar").addEventListener("click", rodar);
 $("rodarMeus").addEventListener("click", rodarMeus);
 $("rodarPessoal").addEventListener("click", rodarPessoal);
