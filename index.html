@@ -1285,6 +1285,7 @@ async function rodarTank() {
         }
       }
       let semJogoAntes = new Set();   // titulares que não jogaram na semana anterior
+      const reservasW = [];            // semanas com reserva forte no banco (vira uma linha só)
       for (const w of feitas) {
         const mt = doTime(MT[w - 1], r), S = STATS[w], cal = calendarioDaSemana(w);
         if (!mt || !S) { semJogoAntes = new Set(); continue; }
@@ -1300,7 +1301,10 @@ async function rodarTank() {
           const bye = !vazio && p.team && (cal[p.team] || "normal") === "bye";
           if (bye && liga32 && ehQbOuK(p)) return;   // liga de 32: QB e kicker de bye são inevitáveis
           if (!vazio) semJogo.add(sid);
-          const opc = banco.filter(b => !usados.has(b) && players[b] && cabeNoSlot(players[b], slot) && jogouNaSemana(S, b, players[b], cal))
+          // opção de verdade: cabe na vaga, jogou e pontuou; jogo antecipado (quinta) não conta para titular de domingo, que pode ter caído depois
+          const cedo = id => (cal[(players[id] || {}).team] || "normal") === "early";
+          const opc = banco.filter(b => !usados.has(b) && players[b] && cabeNoSlot(players[b], slot) && jogouNaSemana(S, b, players[b], cal) && (pp[b] || 0) > 0
+              && (vazio || !cedo(b) || cedo(sid)))
             .sort((a, b) => (pp[b] || 0) - (pp[a] || 0));
           const quem = vazio ? "SPOT VAZIO (" + (SLOT_NOME[slot] || slot) + ")" : nomeDe(p) + (bye ? " ESTAVA DE BYE" : " NÃO JOGOU");
           const pos = p ? [p.position, p.team].filter(Boolean).join(" · ") : "";
@@ -1312,9 +1316,13 @@ async function rodarTank() {
         if (w > 1) {
           const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", ...margens };
           const folga = folgaDe(tit, sig, i => jogouNaSemana(S, i, players[i], cal));
-          sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasDaLiga(MT.slice(0, w - 1)), () => true, sig, folga, rp)
-            .forEach(x => t.antes.push({ w, txt: "S" + w + ": 🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasDaLiga(MT.slice(0, w - 1)), () => true, sig, folga, rp);
+          if (rs.length) reservasW.push({ w, txt: rs[0].txt });
         }
+      }
+      if (reservasW.length) {
+        const ult = reservasW[reservasW.length - 1], ws = reservasW.map(x => "S" + x.w).reverse();
+        t.antes.push({ w: 0, txt: "🔍 RESERVA FORTE NO BANCO EM " + reservasW.length + (reservasW.length > 1 ? " SEMANAS" : " SEMANA") + " (" + ws.join(", ") + "). NA S" + ult.w + ": " + ult.txt, tipo: "warn", banco: true });
       }
       const todos = [...t.agora, ...t.antes];
       t.fortes = todos.filter(i => i.forte).length; t.leves = todos.length - t.fortes;
@@ -1365,7 +1373,8 @@ function desenharTank(t) {
   const regra = ["Vermelho = sinal forte: " + (t.acabou ? "" : "na semana " + t.semana + ", titular OUT, IR, SUS, de bye ou sem time, ou spot vazio, tendo opção no banco para a vaga; ") +
     (t.feitas.length ? "nas semanas que já acabaram, titular que não jogou (ou spot vazio) enquanto alguém que cabia na vaga jogou no banco." : "").replace(/; $/, "."),
     "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga."];
-  if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou: " + faixaSemanas(t.feitas) + ". Lesão em cima da hora também aparece; o que pesa é repetir.");
+  if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + faixaSemanas(t.feitas) + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.");
+  if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem.");
   if (t.ignorouEarly) regra.push("Jogadores dos jogos antecipados desta semana ficaram de fora (opção marcada acima).");
   box.appendChild(el("p", { class: "foot", text: regra.join(" ") }));
   if (t.erroStats) box.appendChild(el("p", { class: "status err", text: "Não consegui ler quem jogou em alguma semana (" + t.erroStats + "): essas semanas ficaram de fora." }));
