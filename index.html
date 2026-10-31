@@ -286,7 +286,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 31/10/2026 (caçar tank numa liga, no Meu painel)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 31/10/2026 (aviso quando o Sleeper limita as consultas)</p>
 </div>
 
 <script>
@@ -473,10 +473,35 @@ function semanaAlvo() {
 const avisoSemana = w => { const a = semanaAlvo(); return a && w !== a ? "Atenção: esta é a semana " + w + ", escolhida à mão. A semana atual no Sleeper é a " + a + "." : ""; };
 
 // ---------------------------------------------------------------- dados
+// O Sleeper pede menos de ~1000 consultas por minuto; passando disso responde 429 (ou nem responde) por um tempo.
+// Tenta de novo duas vezes, com pausa, antes de desistir; o erro diz o que houve.
+const espera = ms => new Promise(r => setTimeout(r, ms));
+const DICA_LIMITE = "Costuma ser o limite de consultas do Sleeper (muitas consultas seguidas): espere um minuto e rode de novo.";
+async function buscar(url, tent = 0) {
+  let r;
+  try { r = await fetch(url, { cache: "no-store" }); }
+  catch (e) { if (tent < 2) { await espera(1500 * (tent + 1)); return buscar(url, tent + 1); } throw new Error("o Sleeper não respondeu"); }
+  if (r.status === 429 && tent < 2) { await espera(2500 * (tent + 1)); return buscar(url, tent + 1); }
+  if (!r.ok) throw new Error("o Sleeper respondeu " + r.status + (r.status === 429 ? " (muitas consultas seguidas)" : ""));
+  return r;
+}
 async function getJSON(path) {
-  const r = await fetch(API + path, { cache: "no-store" });
-  if (!r.ok) throw new Error("Sleeper respondeu " + r.status + " em " + path);
-  return r.json();
+  try { return await (await buscar(API + path)).json(); }
+  catch (e) { throw new Error(e.message.replace(/^o Sleeper/, "Sleeper") + " em " + path); }
+}
+// rodadas que já acabaram não mudam mais: lê uma vez por sessão (economiza centenas de consultas ao rodar de novo)
+const MT_CACHE = {};
+function matchupsDe(lid, w) {
+  const fechada = st.semanaSleeper && w <= ultimaSemanaCompleta(st.semanaSleeper);
+  const k = lid + "-" + w;
+  if (fechada && MT_CACHE[k]) return MT_CACHE[k];
+  const pr = getJSON("/league/" + lid + "/matchups/" + w);
+  if (fechada) { MT_CACHE[k] = pr; pr.catch(() => { delete MT_CACHE[k]; }); }
+  return pr;
+}
+// rodadas anteriores de uma liga (para as médias); quem falhar vira null e o erro fica anotado
+async function rodadasAnteriores(lid, ate, falhas) {
+  return Promise.all(Array.from({ length: Math.max(0, ate) }, (_, i) => matchupsDe(lid, i + 1).catch(e => { falhas.push(e.message); return null; })));
 }
 const norm = s => (s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 function divKey(nome) {
@@ -726,6 +751,7 @@ function desenharResultado(resultados, ctx) {
       el("div", { class: "toolbar" }, bc, fb2));
     const body = el("div", { class: "card-b" });
     if (r.erro) body.appendChild(el("div", { class: "status err", text: r.erro }));
+    if (r.erroMedias) body.appendChild(el("div", { class: "status err", text: r.erroMedias }));
     if (r.avisos && r.avisos.length) body.appendChild(el("div", { class: "status err", text: "Não identifiquei a franquia de: " + r.avisos.join(", ") + ". Ajuste em AJUSTES_FRANQUIA no código." }));
     if (abaixo.length || alerta.length) {
       const ul = el("ul", { class: "lst" });
@@ -1047,7 +1073,7 @@ async function rodarPessoal() {
     }
     const ctx = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: (id, p) => (p && p.injury_status) || null, margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
-    const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
+    const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], semMedias: [], erroMedias: null, ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
       cfg, faltando, conferirFr, banco, waiver, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
     let feitas = 0;
     await emLotes(ativas, 5, async (lg) => {
@@ -1093,14 +1119,16 @@ async function rodarPessoal() {
           }
         }
         if (banco && semana > 1) {
-          const ant = await Promise.all(Array.from({ length: semana - 1 }, (_, i) => getJSON("/league/" + lg.league_id + "/matchups/" + (i + 1)).catch(() => [])));
-          const medias = mediasDaLiga(ant);
+          const falhas = [];
+          const ant = await rodadasAnteriores(lg.league_id, semana - 1, falhas);
+          if (falhas.length) { res.semMedias.push(lg.name); res.erroMedias = falhas[0]; }
+          const medias = mediasDaLiga(ant.map(x => x || []));
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
           sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv });
-      } catch (e) { res.erros.push(lg.name); }
+      } catch (e) { res.erros.push(lg.name); res.erroLiga = e.message; }
       feitas++; status("Lendo ligas… " + feitas + "/" + ativas.length);
     });
     res.ligas.sort((a, b) => a.ordem - b.ordem);
@@ -1117,6 +1145,8 @@ function textoPessoal(r) {
   const com = r.ligas.filter(l => problemas(l).length);
   const linhas = ["*MEUS TIMES — SEMANA " + r.semana + "*", ""];
   if (!com.length) linhas.push("✅ Nenhum problema nas escalações.");
+  if (r.waiver && r.waiver.erro) linhas.push("⚠️ Waiver de fora (não consegui ler as estatísticas).");
+  if (r.semMedias && r.semMedias.length) linhas.push("⚠️ Reservas fortes de fora em: " + r.semMedias.join(", ") + ".");
   com.forEach(l => linhas.push("• " + l.nome + ": " + juntar(problemas(l).map(i => i.txt))));
   const dicas = r.ligas.map(l => [l, linhaWaiver(l, r)]).filter(x => x[1]);
   if (dicas.length) { linhas.push("", "💡 *NA WAIVER — " + MODOS_WAIVER.find(m => m[0] === modoWaiver())[1].toUpperCase() + "*"); dicas.forEach(([l, w]) => linhas.push("• " + l.nome + ": " + w.txt.replace(/^💡 WAIVER · [^:]+: /, ""))); }
@@ -1149,15 +1179,17 @@ function desenharPessoal(r) {
   if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga; nas ligas de cap só aparece se o seu elenco tiver vaga): " +
     { semana: "os 3 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
       snap: "livres com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo 15 pontos ou mais nas semanas " + r.waiver.semanas.join(", ") + ", pela média desses jogos." }[modoWaiver()] }));
-  if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "Não consegui ler as estatísticas para a waiver: " + r.waiver.erro + "." }));
+  if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "A waiver ficou de fora: não consegui ler as estatísticas (" + r.waiver.erro + "). " + DICA_LIMITE }));
+  if (r.semMedias && r.semMedias.length) box.appendChild(el("p", { class: "status err", text: "As reservas fortes ficaram de fora em " + r.semMedias.length + (r.semMedias.length > 1 ? " ligas" : " liga") +
+    " porque não consegui ler as rodadas anteriores (" + r.erroMedias + "): " + r.semMedias.join(", ") + ". " + DICA_LIMITE }));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
   const avisos = [];
   if (r.conferirFr && r.faltando.length) avisos.push("Não achei pelo nome estas ligas franchise da sua lista: " + r.faltando.join(", ") + ". Marque-as em \"Minhas ligas franchise\", no fim da página.");
   if (r.foraTemporada) avisos.push(r.foraTemporada + (r.foraTemporada > 1 ? " ligas fora da temporada não foram verificadas." : " liga fora da temporada não foi verificada."));
   if (r.semTime.length) avisos.push("Sem time seu em: " + r.semTime.join(", ") + ".");
   if (r.ignoradas && r.ignoradas.length) avisos.push("Fora da varredura (eliminado): " + r.ignoradas.join(", ") + ".");
-  if (r.erros.length) avisos.push("Não consegui ler: " + r.erros.join(", ") + ".");
   avisos.forEach(a => box.appendChild(el("p", { class: "foot", text: a })));
+  if (r.erros.length) box.appendChild(el("p", { class: "status err", text: "Não consegui ler: " + r.erros.join(", ") + (r.erroLiga ? " (" + r.erroLiga + ")" : "") + ". " + DICA_LIMITE }));
   const filtroBox = el("label", { class: "op", style: "margin:4px 0 2px" });
   const cb = el("input", { type: "checkbox" }); cb.checked = !!st.pessoalSoProblema;
   cb.addEventListener("change", () => { st.pessoalSoProblema = cb.checked; desenharPessoal(r); });
@@ -1246,7 +1278,8 @@ async function rodarTank() {
     const acabou = semana <= ultima;   // a semana escolhida já terminou: vale quem jogou
     const feitas = $("tankHist").checked ? Array.from({ length: Math.min(ultima, semana) }, (_, i) => i + 1) : acabou ? [semana] : [];
     status("Lendo as rodadas da liga…");
-    const MT = await Promise.all(Array.from({ length: semana }, (_, i) => getJSON("/league/" + id + "/matchups/" + (i + 1)).catch(() => [])));
+    const falhasMt = [];
+    const MT = (await rodadasAnteriores(id, semana, falhasMt)).map(x => x || []);
     const players = await carregarJogadores(status);
     const STATS = {}; let erroStats = null;
     if (feitas.length) {
@@ -1332,7 +1365,8 @@ async function rodarTank() {
     times.sort((a, b) => (b.peso - a.peso) || ((a.v - a.d) - (b.v - b.d)) || a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    st.res.tank = { liga: { id, nome: league.name }, semana, acabou, feitas: feitas.filter(w => STATS[w]), times, quando, margens, erroStats, semDados, ignorouEarly: !acabou && $("pEarly").checked };
+    st.res.tank = { liga: { id, nome: league.name }, semana, acabou, feitas: feitas.filter(w => STATS[w]), times, quando, margens, erroStats, semDados, ignorouEarly: !acabou && $("pEarly").checked,
+      erroMt: falhasMt.length ? falhasMt.length + " de " + semana + " rodadas (" + falhasMt[0] + ")" : null };
     st.vistaPessoal = "tank";
     if (st.grupo === "pessoal") desenharTank(st.res.tank);
     status("Pronto. " + quando + ".");
@@ -1377,7 +1411,8 @@ function desenharTank(t) {
   if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem.");
   if (t.ignorouEarly) regra.push("Jogadores dos jogos antecipados desta semana ficaram de fora (opção marcada acima).");
   box.appendChild(el("p", { class: "foot", text: regra.join(" ") }));
-  if (t.erroStats) box.appendChild(el("p", { class: "status err", text: "Não consegui ler quem jogou em alguma semana (" + t.erroStats + "): essas semanas ficaram de fora." }));
+  if (t.erroStats) box.appendChild(el("p", { class: "status err", text: "Não consegui ler quem jogou em alguma semana (" + t.erroStats + "): essas semanas ficaram de fora. " + DICA_LIMITE }));
+  if (t.erroMt) box.appendChild(el("p", { class: "status err", text: "Não consegui ler " + t.erroMt + ": o que depende delas ficou de fora. " + DICA_LIMITE }));
   if (t.semDados && t.semDados.length) box.appendChild(el("p", { class: "foot", text: "Sem estatística no Sleeper " + (t.semDados.length > 1 ? "nas semanas " + t.semDados.join(", ") + ": ficaram" : "na semana " + t.semDados[0] + ": ficou") + " de fora." }));
   if (avisoSemana(t.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(t.semana) }));
   const emp = t.times.filter(x => x.empate);
@@ -1736,8 +1771,8 @@ const ligaIgnorada = nome => IGNORAR_LIGAS.some(re => re.test(norm(nome)));
 const STATS_CACHE = {};
 async function statsDaSemana(temporada, w) {
   const k = temporada + "-" + w;
-  if (!STATS_CACHE[k]) STATS_CACHE[k] = fetch(API + "/stats/nfl/regular/" + temporada + "/" + w, { cache: "no-store" })
-    .then(r => { if (!r.ok) throw new Error("semana " + w + " respondeu " + r.status); return r.json(); });
+  if (!STATS_CACHE[k]) STATS_CACHE[k] = buscar(API + "/stats/nfl/regular/" + temporada + "/" + w)
+    .catch(e => { throw new Error("semana " + w + ": " + e.message); }).then(r => r.json());
   try { return await STATS_CACHE[k]; } catch (e) { delete STATS_CACHE[k]; throw e; }
 }
 const ehIdp = p => posDe(p).some(x => ["DL", "LB", "DB", "DE", "DT", "CB", "S"].includes(x));
@@ -3673,12 +3708,14 @@ async function rodar() {
         const [league, users, rosters, matchups] = await Promise.all([
           getJSON("/league/" + liga.id), getJSON("/league/" + liga.id + "/users"),
           getJSON("/league/" + liga.id + "/rosters"), getJSON("/league/" + liga.id + "/matchups/" + semana).catch(() => [])]);
-        let medias = null;
+        let medias = null; const falhasAnt = [];
         if (ctx.banco && semana > 1) {
-          const ant = await Promise.all(Array.from({ length: semana - 1 }, (_, i) => getJSON("/league/" + liga.id + "/matchups/" + (i + 1)).catch(() => [])));
-          medias = mediasDaLiga(ant);
+          const ant = await rodadasAnteriores(liga.id, semana - 1, falhasAnt);
+          medias = mediasDaLiga(ant.map(x => x || []));
         }
-        resultados.push(avaliarLiga(liga, { league, users, rosters, matchups, medias }, ctx));
+        const rl = avaliarLiga(liga, { league, users, rosters, matchups, medias }, ctx);
+        if (falhasAnt.length) rl.erroMedias = "Reservas fortes de fora nesta liga: não consegui ler as rodadas anteriores (" + falhasAnt[0] + "). " + DICA_LIMITE;
+        resultados.push(rl);
       } catch (e) {
         resultados.push({ liga, times: [], avisos: [], erro: "Não consegui ler esta liga: " + e.message });
       }
@@ -3711,8 +3748,8 @@ const TIMES_RODADA = {};
 async function timesDaRodada(temporada, semana) {
   const k = temporada + "-" + semana;
   if (TIMES_RODADA[k] && Date.now() - TIMES_RODADA[k].em > 10 * 60 * 1000) delete TIMES_RODADA[k];   // relê a cada 10 min
-  if (!TIMES_RODADA[k]) TIMES_RODADA[k] = fetch("https://api.sleeper.com/stats/nfl/" + temporada + "/" + semana + "?season_type=regular", { cache: "no-store" })
-    .then(r => { if (!r.ok) throw new Error("respondeu " + r.status); return r.json(); })
+  if (!TIMES_RODADA[k]) TIMES_RODADA[k] = buscar("https://api.sleeper.com/stats/nfl/" + temporada + "/" + semana + "?season_type=regular")
+    .catch(e => { throw new Error(e.message.replace(/^o Sleeper /, "")); }).then(r => r.json())
     .then(arr => { const m = {}; (arr || []).forEach(x => { if (x && x.player_id && x.team) m[x.player_id] = x.team; }); return m; });
   TIMES_RODADA[k].em = Date.now();
   try { return await TIMES_RODADA[k]; } catch (e) { delete TIMES_RODADA[k]; throw e; }
