@@ -185,7 +185,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
 
   <nav id="abas" class="abas" role="tablist" aria-label="Grupos de ligas"></nav>
   <div id="linkSenha" class="toolbar" hidden style="margin:-2px 0 10px">
-    <span class="hint">Digite a senha uma vez para liberar o atalho da planilha neste aparelho:</span>
+    <span class="hint">Digite a sua senha uma vez para liberar o atalho da planilha neste aparelho:</span>
     <input id="senhaLink" type="password" class="txt" autocomplete="current-password" aria-label="Senha para liberar o atalho da planilha">
     <button id="entrarLink" class="btn ghost" type="button">Liberar</button>
     <span id="statusLink" class="status" role="status"></span>
@@ -268,6 +268,15 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
         </div>
       </details>
     </div>
+    <div id="painel-contender" class="meus" hidden>
+      <label class="op"><span>Para os alvos de troca, campanha ruim é ter até
+        <select id="cVitorias" aria-label="Máximo de vitórias"><option value="0">0</option><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select> vitórias
+        (a diferença mínima de média é a mesma do Meu painel)</span></label>
+      <div class="toolbar">
+        <button id="rodarContender" class="btn" type="button">Ver minhas campanhas</button>
+        <span id="statusContender" class="status" role="status" aria-live="polite"></span>
+      </div>
+    </div>
     <div id="painel-oficiais" class="meus" hidden>
       <div id="oficiaisEstado" class="hint"></div>
       <div id="oficiaisSenha" class="toolbar" hidden><input id="senhaOf" type="password" autocomplete="current-password" aria-label="Senha dos comissários" class="txt"><button id="entrarOf" class="btn" type="button">Liberar a planilha</button></div>
@@ -294,7 +303,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 01/11/2026 (atalho para a planilha)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 01/11/2026 (aba Contender? e campanha no Meu painel)</p>
 </div>
 
 <script>
@@ -327,6 +336,7 @@ const GRUPOS = [
   { id: "oficiais", nome: "Varreduras oficiais",  nota: "Toda varredura marcada como oficial fica guardada aqui, semana por semana, com a mensagem de cada liga. Com a planilha ligada, todo comissário vê as mesmas, em qualquer aparelho, e a conferência de terça usa a daqui.", restrito: true },
   { id: "meus",  nome: "Meus times",             nota: "Todas as ligas da temporada de um usuário do Sleeper, sem entrar uma por uma: titulares de bye, sem time, OUT, DOUB, IR, SUS, NA ou DNR e spots vazios. Usa a semana e o calendário escolhidos acima." },
   { id: "pessoal", nome: "Meu painel",            nota: "Só seu: revisa os seus times em todas as ligas, confere as franchises nas suas ligas franchise e aponta reservas fortes no banco.", restrito: true, pessoal: true },
+  { id: "contender", nome: "Contender?",          nota: "Só seu: a sua campanha em cada liga e se dá para brigar pelo título. Abrindo uma liga: as picks de 1ª, 2ª e 3ª rodada do próximo draft e jogadores de times com campanha ruim que melhorariam o seu time.", restrito: true, pessoal: true },
   { id: "comissario", nome: "Comissário",       nota: "", soTravado: true },
 ];
 // Se um time não for reconhecido pelo nome, ligue aqui: { "<id da liga>": { "<nick do GM>": "Franquia" } }
@@ -408,12 +418,12 @@ function desenharAbas() {
       if (g.soTravado) setTimeout(() => $("senha").focus(), 0); });
     box.appendChild(b);
   });
-  if (liberado()) {   // atalho para a planilha (o link só existe no aparelho com a chave da senha)
+  if (pessoalLiberado()) {   // atalho para a planilha (só com a senha do Trajano; o link só existe no aparelho com a chave dela)
     const a = el("a", { id: "linkPlanilha", class: "planilha", href: "#" }, "📊 Planilha");
     a.addEventListener("click", (e) => { if (a.dataset.pronto) return; e.preventDefault(); $("linkSenha").hidden = false; $("senhaLink").focus(); });
     box.appendChild(a); prepararLinkPlanilha();
   }
-  if (!liberado()) $("linkSenha").hidden = true;
+  if (!pessoalLiberado()) $("linkSenha").hidden = true;
   const gA = GRUPOS.find(g => g.id === st.grupo);
   $("nota-grupo").textContent = gA.nota; $("nota-grupo").hidden = !gA.nota;
   aplicarPainel();
@@ -424,6 +434,7 @@ function redesenhar() {
   const g = GRUPOS.find(x => x.id === st.grupo);
   if (st.grupo === "oficiais" && !travadoAgora(g)) { desenharOficiais(); return; }
   if (st.grupo === "pessoal" && !travadoAgora(g) && st.vistaPessoal === "tank" && st.res.tank) { desenharTank(st.res.tank); return; }
+  if (st.grupo === "contender" && !travadoAgora(g)) { $("resultado").textContent = ""; desenharContender(); return; }
   if (!r || travadoAgora(g)) { $("resultado").textContent = ""; return; }
   if (st.grupo === "meus") desenharMeus(r);
   else if (st.grupo === "pessoal") desenharPessoal(r);
@@ -454,7 +465,7 @@ function atualizarSnapBox() {
   const loc = lerLocal(st.semana, st.modo, st.grupo);
   const rem = (st.listaOficial || []).find(x => x.id === idOficial(temporadaAtual(), st.semana, st.modo, st.grupo));
   const s = rem && (!loc || String(loc.salvoEm || "") <= String(rem.salvoEm || "")) ? rem : loc;
-  $("snapbox").hidden = !s || st.grupo === "meus" || st.grupo === "pessoal" || st.grupo === "oficiais" || travadoAgora(g) || !(st.modo === "early" || st.modo === "dom");
+  $("snapbox").hidden = !s || ["meus", "pessoal", "oficiais", "contender"].includes(st.grupo) || travadoAgora(g) || !(st.modo === "early" || st.modo === "dom");
   if (s) $("snapTxt").textContent = "Conferência: usar o status da varredura oficial de " + s.quando + (s === rem ? " (planilha)" : " (este aparelho)");
   else $("usarSnap").checked = false;
 }
@@ -481,7 +492,7 @@ function ultimaSemanaCompleta(semana) {
 // semana certa para a tela: a conferência de terça é sempre da última rodada encerrada; o resto segue a semana exibida no Sleeper
 function semanaAlvo() {
   if (!st.semanaSleeper) return null;
-  const terca = st.modo === "terca" && !["meus", "pessoal", "oficiais"].includes(st.grupo);
+  const terca = st.modo === "terca" && !["meus", "pessoal", "oficiais", "contender"].includes(st.grupo);
   return terca ? Math.max(1, ultimaSemanaCompleta(st.semanaSleeper)) : st.semanaSleeper;
 }
 const avisoSemana = w => { const a = semanaAlvo(); return a && w !== a ? "Atenção: esta é a semana " + w + ", escolhida à mão. A semana atual no Sleeper é a " + a + "." : ""; };
@@ -1027,7 +1038,8 @@ function configMinhas(ligas) {
     let ref = MINHAS_FRANQUIAS_ID[lg.league_id] || null;
     if (!ref) { const i = MINHAS_FRANQUIAS.findIndex((x, k) => !usadas.has(k) && x[2](n)); if (i >= 0) { usadas.add(i); ref = MINHAS_FRANQUIAS[i]; } }
     const m = n.match(/\b(\d)\s*f\b/) || n.match(/\((\d)\)/);
-    const auto = { on: !!ref, min: ref ? ref[1] : (m ? +m[1] : 7), fr: "auto", lista: ref ? ref[0] : "", detectada: !!ref || !!m };
+    const site = LIGAS.find(l => l.id === lg.league_id);   // liga do site (BFA): franchise com o mínimo do site
+    const auto = { on: !!ref || !!site, min: site ? site.min : ref ? ref[1] : (m ? +m[1] : 7), fr: "auto", lista: ref ? ref[0] : site ? "liga do site" : "", detectada: !!ref || !!m || !!site };
     cfg[lg.league_id] = salvo[lg.league_id] ? { ...auto, ...salvo[lg.league_id], salvo: true } : auto;
   }
   const faltando = MINHAS_FRANQUIAS.filter((x, k) => !usadas.has(k)).map(x => x[0])
@@ -1039,6 +1051,22 @@ function salvarMinha(lid, campos) {
   s[lid] = { ...(s[lid] || {}), ...campos };
   armazenar.set("bfa-minhas-franquias", s);
 }
+// campanha e posição na liga (classificação geral: vitórias, empates, pontos feitos)
+const pontosFeitos = r => (((r || {}).settings || {}).fpts || 0) + (((r || {}).settings || {}).fpts_decimal || 0) / 100;
+const pontosSofridos = r => (((r || {}).settings || {}).fpts_against || 0) + (((r || {}).settings || {}).fpts_against_decimal || 0) / 100;
+function classificacao(rosters) {
+  const s = r => r.settings || {};
+  const ord = (rosters || []).slice().sort((a, b) => ((s(b).wins || 0) - (s(a).wins || 0)) || ((s(b).ties || 0) - (s(a).ties || 0)) || (pontosFeitos(b) - pontosFeitos(a)));
+  const pos = {}; ord.forEach((r, i) => { pos[r.roster_id] = i + 1; });
+  return { ord, pos };
+}
+function campanhaDe(rosters, r) {
+  if (!r) return null;
+  const s = r.settings || {}, { pos } = classificacao(rosters);
+  return { v: s.wins || 0, d: s.losses || 0, e: s.ties || 0, pos: pos[r.roster_id], n: (rosters || []).length, pf: pontosFeitos(r), pa: pontosSofridos(r) };
+}
+const recorde = c => c.v + "-" + c.d + (c.e ? "-" + c.e : "");
+const txtCampanha = c => c ? recorde(c) + " · " + c.pos + "º de " + c.n : "";
 // franquia do meu time: escolhida à mão > divisão real da NFL + nome do time > só o nome do time
 function franquiaDoMeuTime(lg, league, users, rosters, meu, c) {
   if (c && c.fr && c.fr !== "auto") return c.fr;
@@ -1104,8 +1132,9 @@ async function rodarPessoal() {
         const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
         const titulares = m ? m.starters : (meu.starters || []);
         const fq = ehFranq ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
+        const camp = campanhaDe(rosters, meu);
         if (fq && ligaEmpateBye(lg.name) && (st.cal[ABBR[fq]] || "normal") === "bye") {   // franquia de bye = empate: a liga sai da varredura nesta semana
-          res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], fr: { franquia: fq, bye: true, empate: true }, ehFr }); return;
+          res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], fr: { franquia: fq, bye: true, empate: true }, ehFr, camp }); return;
         }
         const cap = ligaCap(lg.name), temVaga = temVagaNoElenco(meu, league);
         const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32, semStatusDe: ehFr && fq ? ABBR[fq] : null },
@@ -1131,6 +1160,9 @@ async function rodarPessoal() {
             if (!bye && validos < c.min) itens.unshift({ txt: "FRANCHISES (" + fq + "): " + validos + " DE " + c.min + (ruins.length ? " POIS " + juntar(ruins) : " ESCALADAS"), tipo: "wo", abaixo: true });
             else if (!bye && ruins.length) itens.unshift({ txt: "FRANCHISES (" + fq + "): " + validos + " DE " + c.min + ", MAS " + juntar(ruins), tipo: "warn" });
           }
+        } else if (fq) {   // liga franchise com a conferência desligada: mostra quantos estão escalados, sem cobrar o mínimo
+          const validos = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const s2 = ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
+          fr = { franquia: fq, validos, min: null, bye: (st.cal[sig] || "normal") === "bye", info: true };
         }
         if (banco && semana > 1) {
           const falhas = [];
@@ -1141,7 +1173,7 @@ async function rodarPessoal() {
           sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
-        res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv });
+        res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv, camp });
       } catch (e) { res.erros.push(lg.name); res.erroLiga = e.message; }
       feitas++; status("Lendo ligas… " + feitas + "/" + ativas.length);
     });
@@ -1161,7 +1193,7 @@ function textoPessoal(r) {
   if (!com.length) linhas.push("✅ Nenhum problema nas escalações.");
   if (r.waiver && r.waiver.erro) linhas.push("⚠️ Waiver de fora (não consegui ler as estatísticas).");
   if (r.semMedias && r.semMedias.length) linhas.push("⚠️ Reservas fortes de fora em: " + r.semMedias.join(", ") + ".");
-  com.forEach(l => linhas.push("• " + l.nome + ": " + juntar(problemas(l).map(i => i.txt))));
+  com.forEach(l => linhas.push("• " + l.nome + (l.camp ? " (" + recorde(l.camp) + ")" : "") + ": " + juntar(problemas(l).map(i => i.txt))));
   const dicas = r.ligas.map(l => [l, linhaWaiver(l, r)]).filter(x => x[1]);
   if (dicas.length) { linhas.push("", "💡 *NA WAIVER — " + MODOS_WAIVER.find(m => m[0] === modoWaiver())[1].toUpperCase() + "*"); dicas.forEach(([l, w]) => linhas.push("• " + l.nome + ": " + w.txt.replace(/^💡 WAIVER · [^:]+: /, ""))); }
   linhas.push("", "Verificado em " + r.quando + " (" + r.ligas.length + " ligas)");
@@ -1210,7 +1242,8 @@ function desenharPessoal(r) {
   filtroBox.appendChild(cb); filtroBox.appendChild(el("span", { text: "Mostrar só as ligas com problema" }));
   box.appendChild(filtroBox);
   for (const l of r.ligas) {
-    const frTxt = l.fr ? "franchise: " + l.fr.franquia + (l.fr.empate ? " de bye: empate" : l.fr.bye ? " (bye, isenta)" : " · " + l.fr.validos + " de " + l.fr.min) : "";
+    const frTxt = [l.camp ? "campanha " + txtCampanha(l.camp) : "",
+      l.fr ? "franchise: " + l.fr.franquia + (l.fr.empate ? " de bye: empate" : l.fr.bye ? " (bye, isenta)" : l.fr.min ? " · " + l.fr.validos + " de " + l.fr.min : " · " + l.fr.validos + (l.fr.validos === 1 ? " escalado" : " escalados")) : ""].filter(Boolean).join(" · ");
     const np = problemas(l).length, its = itensComWaiver(l, r);
     if (!its.length || (st.pessoalSoProblema && !np)) {
       if (!st.pessoalSoProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || "sem problema" })));
@@ -1447,6 +1480,244 @@ function desenharTank(t) {
       el("div", { class: "card-b" }, ul)));
   }
 }
+// ---------------------------------------------------------------- Contender? (só o Trajano)
+// Lista: a campanha em cada liga e o veredito (classificação geral; não considera vaga garantida de divisão).
+// Liga aberta: classificação, picks de 1ª, 2ª e 3ª rodada do próximo draft (ordem projetada pela classificação de hoje:
+// pior campanha escolhe primeiro) e jogadores de times com campanha ruim que melhorariam o seu time titular.
+const VEREDITOS = {
+  contender: { rot: "🏆 Contender", cls: "ok", ordem: 0 },
+  briga: { rot: "⚖️ Na briga", cls: "info", ordem: 1 },
+  atras: { rot: "📉 Correndo atrás", cls: "warn", ordem: 2 },
+  rebuild: { rot: "🔨 Rebuild", cls: "wo", ordem: 3 },
+  sem: { rot: "Sem playoff definido", cls: "info", ordem: 4 },
+};
+const vitoriasDe = r => ((r.settings || {}).wins || 0) + 0.5 * ((r.settings || {}).ties || 0);
+const nVit = x => (Number.isInteger(x) ? String(x) : num(x)) + (x === 1 ? " vitória" : " vitórias");
+function avaliarContender(league, rosters, meu) {
+  const camp = campanhaDe(rosters, meu), { ord } = classificacao(rosters), cfg = (league && league.settings) || {};
+  const n = rosters.length, vagas = Math.min(cfg.playoff_teams || 0, n);
+  const regulares = Math.max(1, (cfg.playoff_week_start || 15) - 1);
+  const restantes = Math.max(0, regulares - (camp.v + camp.d + camp.e));
+  const pfPos = rosters.slice().sort((a, b) => pontosFeitos(b) - pontosFeitos(a)).findIndex(r => r.roster_id === meu.roster_id) + 1;
+  const minhas = vitoriasDe(meu), partes = [];
+  let veredito = "sem", dif = null;
+  if (vagas) {
+    if (camp.pos <= vagas) {
+      const fora = ord[vagas]; dif = fora ? minhas - vitoriasDe(fora) : null;
+      partes.push("dentro da zona de playoff (" + vagas + " vagas)" + (dif != null ? (dif > 0 ? ", " + nVit(dif) + " à frente do " + (vagas + 1) + "º" : ", empatado em vitórias com o " + (vagas + 1) + "º") : ""));
+      veredito = pfPos <= vagas ? "contender" : "briga";
+    } else {
+      const ultima = ord[vagas - 1]; dif = minhas - vitoriasDe(ultima);
+      const atras = -dif;
+      partes.push("fora da zona de playoff (" + vagas + " vagas), " + (atras > 0 ? nVit(atras) + " atrás do " + vagas + "º" : "empatado em vitórias com o " + vagas + "º"));
+      veredito = atras > restantes ? "rebuild" : atras <= 1 ? "briga" : (atras >= 3 && pfPos > n / 2) ? "rebuild" : "atras";
+    }
+  }
+  partes.push(pfPos + "º em pontos feitos");
+  partes.push(restantes ? "faltam " + restantes + (restantes > 1 ? " jogos" : " jogo") + " na temporada regular" : "temporada regular no fim");
+  if (vagas && camp.pos > vagas && -dif > restantes) partes.push("não alcança mais a vaga pelas vitórias");
+  return { camp, vagas, restantes, pfPos, veredito, motivo: partes.join("; "), dif };
+}
+async function rodarContender() {
+  const btn = $("rodarContender"); const status = (t, err) => { $("statusContender").textContent = t; $("statusContender").className = "status" + (err ? " err" : ""); };
+  const usuario = ($("usuarioP").value || "").trim() || "Apenastraja";
+  btn.disabled = true; status("Conferindo a semana no Sleeper…");
+  try {
+    await conferirSemana();
+    const u = await getJSON("/user/" + encodeURIComponent(usuario));
+    if (!u || !u.user_id) { status("Não achei o usuário \"" + usuario + "\" no Sleeper.", true); return; }
+    const estado = await getJSON("/state/nfl");
+    const temporada = estado.league_season || estado.season;
+    const ligas = ((await getJSON("/user/" + u.user_id + "/leagues/nfl/" + temporada)) || []).filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
+    const ordemFixa = ORDEM_POR_USUARIO[String(u.username || usuario).toLowerCase()] || [];
+    const posL = id => { const i = ordemFixa.indexOf(id); return i >= 0 ? i : 10000; };
+    const res = { usuario: u.display_name || usuario, uid: u.user_id, ligas: [], semTime: [], erros: [] };
+    let feitas = 0;
+    await emLotes(ligas, 6, async (lg) => {
+      try {
+        const [league, rosters] = await Promise.all([getJSON("/league/" + lg.league_id), getJSON("/league/" + lg.league_id + "/rosters")]);
+        const meu = (rosters || []).find(r => r.owner_id === u.user_id || (r.co_owners || []).includes(u.user_id));
+        if (!meu) { res.semTime.push(lg.name); return; }
+        res.ligas.push({ id: lg.league_id, nome: lg.name, ordem: posL(lg.league_id) * 1000 + ligas.indexOf(lg), tipo: (league.settings || {}).type, ...avaliarContender(league, rosters, meu) });
+      } catch (e) { res.erros.push(lg.name); res.erro = e.message; }
+      feitas++; status("Lendo ligas… " + feitas + "/" + ligas.length);
+    });
+    res.ligas.sort((a, b) => (VEREDITOS[a.veredito].ordem - VEREDITOS[b.veredito].ordem) || (a.ordem - b.ordem));
+    const agora = new Date();
+    res.quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    st.res.contender = res; st.vistaContender = "lista";
+    if (st.grupo === "contender") desenharContender();
+    status("Pronto. " + res.quando + ".");
+  } catch (e) {
+    status("Não consegui falar com o Sleeper: " + e.message + ". " + DICA_LIMITE, true);
+  } finally { btn.disabled = false; }
+}
+function desenharContender() {
+  if (st.vistaContender === "liga" && st.res.contenderLiga) return desenharLigaContender(st.res.contenderLiga);
+  const r = st.res.contender, box = $("resultado"); box.textContent = "";
+  if (!r) return;
+  const conta = k => r.ligas.filter(l => l.veredito === k).length;
+  box.appendChild(el("div", { class: "summary" },
+    el("span", { class: "count", text: "@" + r.usuario }),
+    ...["contender", "briga", "atras", "rebuild"].map(k => el("span", { class: "pill " + VEREDITOS[k].cls, text: VEREDITOS[k].rot + ": " + conta(k) })),
+    el("span", { class: "foot", text: r.ligas.length + " ligas · " + r.quando })));
+  box.appendChild(el("p", { class: "foot", text: "Pela classificação geral (vitórias, depois pontos feitos), sem contar vaga garantida de divisão. Contender: dentro da zona de playoff e entre os que mais pontuam. Na briga: dentro, mas pontuando menos que a campanha sugere, ou fora por até 1 vitória. Correndo atrás: fora por 2 vitórias ou mais. Rebuild: não alcança mais a vaga, ou está 3 vitórias atrás e na metade de baixo em pontos. Toque em \"Analisar\" para ver as picks e os alvos de troca." }));
+  if (r.erros.length) box.appendChild(el("p", { class: "status err", text: "Não consegui ler: " + r.erros.join(", ") + " (" + r.erro + "). " + DICA_LIMITE }));
+  if (r.semTime.length) box.appendChild(el("p", { class: "foot", text: "Sem time seu em: " + r.semTime.join(", ") + "." }));
+  for (const l of r.ligas) {
+    const v = VEREDITOS[l.veredito];
+    const b = el("button", { class: "btn ghost", type: "button" }, "Analisar");
+    b.addEventListener("click", () => analisarContender(l.id));
+    box.appendChild(el("article", { class: "card" },
+      el("div", { class: "card-h" }, el("div", {}, el("h2", { text: l.nome }),
+        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + v.cls, text: v.rot }), el("span", { class: "foot", text: txtCampanha(l.camp) })))),
+      el("div", { class: "card-b" }, el("div", { class: "foot", text: l.motivo.charAt(0).toUpperCase() + l.motivo.slice(1) + "." }), el("div", { class: "toolbar" }, b))));
+  }
+}
+// médias da liga com um mínimo de jogos (o titular conta com 1 jogo; o alvo de troca precisa de 2)
+function mediasMin(semanasMatchups, minJ) {
+  const soma = {}, n = {};
+  for (const ms of semanasMatchups) for (const m of (ms || [])) for (const [id, v] of Object.entries((m && m.players_points) || {})) {
+    if (!v) continue; soma[id] = (soma[id] || 0) + v; n[id] = (n[id] || 0) + 1;
+  }
+  const med = {}; for (const id of Object.keys(soma)) if (n[id] >= minJ) med[id] = { m: soma[id] / n[id], j: n[id] };
+  return med;
+}
+async function analisarContender(lid) {
+  const status = (t, err) => { $("statusContender").textContent = t; $("statusContender").className = "status" + (err ? " err" : ""); };
+  const uid = st.res.contender && st.res.contender.uid;
+  if (!uid) { status("Toque em \"Ver minhas campanhas\" primeiro.", true); return; }
+  status("Lendo a liga…");
+  try {
+    const [league, users, rosters, trocadas] = await Promise.all([getJSON("/league/" + lid), getJSON("/league/" + lid + "/users").catch(() => []),
+      getJSON("/league/" + lid + "/rosters"), getJSON("/league/" + lid + "/traded_picks").catch(() => [])]);
+    const meu = rosters.find(r => r.owner_id === uid || (r.co_owners || []).includes(uid));
+    if (!meu) { status("Você não tem time nesta liga.", true); return; }
+    const byUser = {}; (users || []).forEach(x => { byUser[x.user_id] = x; });
+    const nomeR = r => { const x = byUser[r.owner_id] || {}; return x.display_name || ((x.metadata || {}).team_name) || "time " + r.roster_id; };
+    const porId = {}; rosters.forEach(r => { porId[r.roster_id] = r; });
+    const av = avaliarContender(league, rosters, meu), { ord, pos } = classificacao(rosters);
+    const cfg = league.settings || {};
+    // picks do próximo draft (1ª a 3ª rodada): dono atual de cada uma e posição projetada (pior campanha primeiro)
+    const prox = String(Number(league.season || temporadaAtual()) + 1);
+    const rodadas = [1, 2, 3].filter(rd => rd <= (cfg.draft_rounds || 3));
+    const inv = ord.slice().reverse(), slot = {}; inv.forEach((r, i) => { slot[r.roster_id] = i + 1; });
+    const dono = (season, rd, orig) => { const t = (trocadas || []).find(x => String(x.season) === season && x.round === rd && x.roster_id === orig); return t ? t.owner_id : orig; };
+    const redraft = (cfg.type || 0) === 0;
+    const picks = redraft ? [] : rodadas.flatMap(rd => inv.map(r => ({ rd, slot: slot[r.roster_id], orig: r.roster_id, dono: dono(prox, rd, r.roster_id) })));
+    const seguinte = String(Number(prox) + 1);
+    const minhasSeguinte = redraft ? 0 : rodadas.reduce((a, rd) => a + rosters.filter(r => dono(seguinte, rd, r.roster_id) === meu.roster_id).length, 0);
+    // alvos de troca: jogadores de times com até N vitórias que melhorariam um titular seu
+    const players = await carregarJogadores(status);
+    const ultima = Math.max(0, ultimaSemanaCompleta(st.semanaSleeper || 1));
+    status("Lendo as rodadas da liga…");
+    const falhas = [], ant = (await rodadasAnteriores(lid, ultima, falhas)).map(x => x || []);
+    const med2 = mediasMin(ant, 2), med1 = mediasMin(ant, 1);
+    const atual = st.semanaSleeper ? await matchupsDe(lid, st.semanaSleeper).catch(() => []) : [];
+    const mt = (atual || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
+    const tit = mt ? mt.starters : (meu.starters || []), rp = league.roster_positions || [];
+    let fr = {}; try { fr = mapearFranquias({ id: lid }, league, users || [], rosters).fr || {}; } catch (e) {}
+    const minhaFr = fr[meu.roster_id] || null, sigFr = minhaFr ? ABBR[minhaFr] : null;
+    const limite = parseInt($("cVitorias").value, 10); const N = Number.isFinite(limite) ? limite : 2;
+    const mA = parseInt($("pMargemA").value, 10) || 3, mD = parseInt($("pMargemD").value, 10) || 5;
+    const vendedores = rosters.filter(r => r.roster_id !== meu.roster_id && ((r.settings || {}).wins || 0) <= N);
+    const alvos = [];
+    for (const r of vendedores) for (const id of (r.players || [])) {
+      const p = players[id], md = med2[id]; if (!p || !p.team || !md) continue;
+      if (posDe(p).some(x => x === "K" || x === "DEF")) continue;
+      let melhor = null;
+      tit.forEach((sid, i) => {
+        const sl = rp[i]; if (!sl || !SLOT_ELEG[sl] || !cabeNoSlot(p, sl)) return;
+        const vazio = !sid || sid === "0", mS = vazio ? 0 : (med1[sid] ? med1[sid].m : 0);
+        const ganho = md.m - mS, margem = SLOTS_IDP.has(sl) ? mD : mA;
+        if (ganho >= margem && (!melhor || ganho > melhor.ganho)) melhor = { ganho, sl, sai: vazio ? "a vaga vazia" : nomeDe(players[sid]) + " (" + num(mS) + ")" };
+      });
+      if (melhor) alvos.push({ id, p, md, de: r, ...melhor, franquia: !!sigFr && p.team === sigFr });
+    }
+    alvos.sort((a, b) => b.ganho - a.ganho);
+    st.res.contenderLiga = { lid, nome: league.name, av, ord, pos, nomeR, porId, meu, prox, seguinte, rodadas, picks, redraft, minhasSeguinte, vendedores, alvos: alvos.slice(0, 20), nAlvos: alvos.length,
+      N, mA, mD, minhaFr, erroMt: falhas.length ? falhas[0] : null, semanas: ultima };
+    st.vistaContender = "liga";
+    if (st.grupo === "contender") { desenharLigaContender(st.res.contenderLiga); window.scrollTo(0, $("resultado").offsetTop - 8); }
+    status("Pronto.");
+  } catch (e) {
+    status("Não consegui ler a liga: " + e.message + ". " + DICA_LIMITE, true);
+  }
+}
+const rotPick = (rd, sl) => rd + "." + String(sl).padStart(2, "0");
+function textoLigaContender(c) {
+  const v = VEREDITOS[c.av.veredito], L = ["*" + c.nome.toUpperCase() + " — " + v.rot.toUpperCase() + "*", txtCampanha(c.av.camp) + ". " + c.av.motivo.charAt(0).toUpperCase() + c.av.motivo.slice(1) + "."];
+  if (!c.redraft) {
+    L.push("", "*PICKS " + c.prox + " (projeção pela classificação de hoje)*");
+    const minhas = c.picks.filter(p => p.dono === c.meu.roster_id);
+    L.push("Suas: " + (minhas.length ? minhas.map(p => rotPick(p.rd, p.slot) + (p.orig === c.meu.roster_id ? " (própria)" : " (do @" + c.nomeR(c.porId[p.orig]) + ")")).join(", ") : "nenhuma nas 3 primeiras rodadas"));
+    c.picks.filter(p => p.orig === c.meu.roster_id && p.dono !== c.meu.roster_id).forEach(p => L.push("Sua " + p.rd + "ª está com @" + c.nomeR(c.porId[p.dono])));
+  }
+  if (c.alvos.length) {
+    L.push("", "*ALVOS EM TIMES COM ATÉ " + c.N + " VITÓRIAS*");
+    c.alvos.slice(0, 10).forEach(a => L.push("• " + nomeDe(a.p) + " (" + posDe(a.p).join("/") + ", " + a.p.team + ") média " + num(a.md.m) + " · do @" + c.nomeR(a.de) + " (" + recorde(campanhaDe(c.ord, a.de)) + ") · entra no lugar de " + a.sai));
+  }
+  return L.join("\n");
+}
+function desenharLigaContender(c) {
+  const box = $("resultado"); box.textContent = "";
+  const v = VEREDITOS[c.av.veredito];
+  const volta = el("button", { class: "btn ghost", type: "button" }, "← Todas as ligas");
+  volta.addEventListener("click", () => { st.vistaContender = "lista"; desenharContender(); });
+  const fb = el("span", { class: "copied" }), bc = el("button", { class: "btn ghost", type: "button" }, "Copiar análise");
+  bc.addEventListener("click", () => copiar(textoLigaContender(c), fb));
+  box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: c.nome }), el("span", { class: "pill " + v.cls, text: v.rot }),
+    el("span", { class: "foot", text: txtCampanha(c.av.camp) + (c.minhaFr ? " · franquia " + c.minhaFr : "") }), volta, bc, fb));
+  box.appendChild(el("p", { class: "foot", text: c.av.motivo.charAt(0).toUpperCase() + c.av.motivo.slice(1) + "." }));
+  if (c.erroMt) box.appendChild(el("p", { class: "status err", text: "Faltou ler alguma rodada (" + c.erroMt + "): as médias podem estar incompletas. " + DICA_LIMITE }));
+  // classificação
+  const ulC = el("ul", { class: "lst" });
+  c.ord.forEach((r, i) => {
+    const cp = campanhaDe(c.ord, r), eu = r.roster_id === c.meu.roster_id, vend = !eu && cp.v <= c.N;
+    ulC.appendChild(el("li", { class: eu ? "info" : vend ? "warn" : "neutro" }, (i + 1) + "º @" + c.nomeR(r) + " · " + recorde(cp) + " · " + num(cp.pf) + " pts" + (eu ? " (você)" : vend ? " · campanha ruim" : "") + (c.av.vagas && i + 1 === c.av.vagas ? " · última vaga" : "")));
+  });
+  box.appendChild(el("article", { class: "card" }, el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "Classificação" }))), el("div", { class: "card-b" }, ulC)));
+  // picks
+  const cardP = el("div", { class: "card-b" });
+  if (c.redraft) cardP.appendChild(el("div", { class: "foot", text: "Liga redraft: não há picks futuras para trocar." }));
+  else {
+    const minhas = c.picks.filter(p => p.dono === c.meu.roster_id), perdidas = c.picks.filter(p => p.orig === c.meu.roster_id && p.dono !== c.meu.roster_id);
+    cardP.appendChild(el("div", { class: "foot", text: "Ordem projetada pela classificação de hoje (pior campanha escolhe primeiro). Suas: " +
+      (minhas.length ? minhas.map(p => rotPick(p.rd, p.slot) + (p.orig === c.meu.roster_id ? " própria" : " do @" + c.nomeR(c.porId[p.orig]))).join(", ") : "nenhuma") +
+      (perdidas.length ? ". Trocadas: " + perdidas.map(p => "sua " + p.rd + "ª com @" + c.nomeR(c.porId[p.dono])).join(", ") : "") + ". Em " + c.seguinte + ": " + c.minhasSeguinte + " picks nas 3 primeiras rodadas." }));
+    // quem tem muita pick boa: parceiro para trocar
+    const qtd = {}; c.picks.filter(p => p.rd <= 2).forEach(p => { qtd[p.dono] = (qtd[p.dono] || 0) + 1; });
+    const ricos = Object.entries(qtd).filter(([d, n]) => n > 2 && +d !== c.meu.roster_id).sort((a, b) => b[1] - a[1]);
+    if (ricos.length) cardP.appendChild(el("div", { class: "foot", text: "Com mais picks de 1ª e 2ª: " + ricos.map(([d, n]) => "@" + c.nomeR(c.porId[d]) + " (" + n + ")").join(", ") + "." }));
+    for (const rd of c.rodadas) {
+      const ul = el("ul", { class: "lst" });
+      c.picks.filter(p => p.rd === rd).forEach(p => {
+        const minha = p.dono === c.meu.roster_id, trocada = p.dono !== p.orig, oR = c.porId[p.orig];
+        const txt = rotPick(rd, p.slot) + " · do @" + c.nomeR(oR) + " (" + recorde(campanhaDe(c.ord, oR)) + ")" + (trocada ? " · com @" + c.nomeR(c.porId[p.dono]) : "") + (minha ? " · SUA" : "");
+        ul.appendChild(el("li", { class: minha ? "info" : p.orig === c.meu.roster_id ? "warn" : "neutro" }, txt));
+      });
+      cardP.appendChild(el("div", { class: "gm", text: rd + "ª rodada" })); cardP.appendChild(ul);
+    }
+  }
+  box.appendChild(el("article", { class: "card" }, el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "Picks " + c.prox + " · 1ª a 3ª rodada" }))), cardP));
+  // alvos de troca
+  const cardA = el("div", { class: "card-b" });
+  cardA.appendChild(el("div", { class: "foot", text: "Times com até " + c.N + (c.N === 1 ? " vitória" : " vitórias") + ": " + (c.vendedores.length ? c.vendedores.map(r => "@" + c.nomeR(r) + " (" + recorde(campanhaDe(c.ord, r)) + ")").join(", ") : "nenhum") +
+    ". Alvo = jogador deles com média (na pontuação desta liga, " + (c.semanas ? "semanas 1 a " + c.semanas : "sem semanas") + ", mínimo 2 jogos) pelo menos " + c.mA + " pontos acima do seu titular da vaga no ataque, ou " + c.mD + " na defesa." +
+    (c.minhaFr ? " ★ = jogador da sua franquia (" + c.minhaFr + ")." : "") }));
+  if (!c.alvos.length) cardA.appendChild(el("div", { class: "foot", text: "Nenhum jogador desses times melhora o seu time titular por essa diferença." }));
+  else {
+    const ul = el("ul", { class: "lst" });
+    c.alvos.forEach(a => {
+      const s = a.p.injury_status && a.p.injury_status !== "Questionable" ? " · " + (NAO_CONTA[a.p.injury_status] || a.p.injury_status) : "";
+      ul.appendChild(el("li", { class: a.franquia ? "info" : "neutro" }, (a.franquia ? "★ " : "") + nomeDe(a.p) + " (" + posDe(a.p).join("/") + ", " + a.p.team + s + ") · média " + num(a.md.m) + " em " + a.md.j + " jogos · do @" + c.nomeR(a.de) +
+        " (" + recorde(campanhaDe(c.ord, a.de)) + ") · entra no lugar de " + a.sai + " (" + (SLOT_NOME[a.sl] || a.sl) + ", +" + num(a.ganho) + ")"));
+    });
+    cardA.appendChild(ul);
+    if (c.nAlvos > c.alvos.length) cardA.appendChild(el("div", { class: "foot", text: "Mostrando os " + c.alvos.length + " que mais melhoram, de " + c.nAlvos + "." }));
+  }
+  box.appendChild(el("article", { class: "card" }, el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "Alvos de troca" }))), cardA));
+}
 // lista das ligas franchise (marcar/desmarcar, mínimo e franquia), guardada neste aparelho
 function blocoMinhas(r) {
   const salvo = armazenar.get("bfa-minhas-franquias") || {};
@@ -1499,9 +1770,9 @@ async function entrar() {
     st.grupo = h === SENHA_PESSOAL_SHA256 ? "pessoal" : "bfa"; desenharAbas(); desenharLigas(); redesenhar();
   } else { $("senhaMsg").textContent = "Senha errada."; }
 }
-// Atalho para a planilha BFA_Controle_WO_2026 (aba Registro). O código do site é público, então o link fica cifrado
-// com a chave de cada senha e só aparece no aparelho liberado (que guarda essa chave).
-const PLANILHA_LINK_CIFRADO = [{"i":"S8aj6GQdIW7mgR7I","c":"RiX2DOUgIZhlk4nvBk+CvyyFLsMnSkQkgYIRvQPsPYCpbiQZuqKT1V0pK+b7q7DGneOYH/XRTyh5i1ohr6ySZ40C5KnXy87DmIa7jQG4kHYCfLSEsjZaPHsfbn4dOmZ67I0LnDNQNAs="},{"i":"eamZbG4rpaBEG8nx","c":"FNcVmZnYjDShFHKBn/LX6b4C20SPOD9HRNLbCADgBiQkdBqE2nycqrd7MDV31UnNyUSIwt1k5MkzUxyc5mgdHZ/1T6jCURaQ852nlvnbSSE3oyc2ZSkPmj1xqrKjzmpW+KPc5Fwsru8="}];
+// Atalho para a planilha BFA_Controle_WO_2026 (aba Registro), só para o Trajano (só ele edita a planilha).
+// O código do site é público, então o link fica cifrado com a chave da senha dele e só aparece no aparelho liberado com ela.
+const PLANILHA_LINK_CIFRADO = [{"i":"eamZbG4rpaBEG8nx","c":"FNcVmZnYjDShFHKBn/LX6b4C20SPOD9HRNLbCADgBiQkdBqE2nycqrd7MDV31UnNyUSIwt1k5MkzUxyc5mgdHZ/1T6jCURaQ852nlvnbSSE3oyc2ZSkPmj1xqrKjzmpW+KPc5Fwsru8="}];
 const PLANILHA_GID_REGISTRO = "1774842015";
 async function linkDaPlanilha() {
   const ch = armazenar.get("bfa-chave");
@@ -1525,7 +1796,7 @@ async function prepararLinkPlanilha() {
 async function liberarLink() {
   const v = $("senhaLink").value.trim(); let h = "";
   try { h = await sha256(v); } catch (e) {}
-  if (h !== SENHA_SHA256 && h !== SENHA_PESSOAL_SHA256) { $("statusLink").textContent = "Senha errada."; $("statusLink").className = "status err"; return; }
+  if (h !== SENHA_PESSOAL_SHA256) { $("statusLink").textContent = "Senha errada (o atalho é só com a sua senha)."; $("statusLink").className = "status err"; return; }
   armazenar.set("bfa-chave", await chaveDaSenha(v)); $("senhaLink").value = ""; $("statusLink").textContent = ""; $("statusLink").className = "status";
   $("linkSenha").hidden = true; await prepararLinkPlanilha();
   if (st.grupo === "oficiais") estadoOficiais();
@@ -1759,13 +2030,13 @@ function aplicarPainel() {
   const pess = st.grupo === "pessoal";
   const meus = st.grupo === "meus" || pess;
   const m = st.modo, varre = m === "early" || m === "dom";
-  const ofi = st.grupo === "oficiais", nada = meus || ofi;
+  const ofi = st.grupo === "oficiais", cont = st.grupo === "contender", nada = meus || ofi || cont;
   const vis = {
     "painel-senha": travado,
-    "box-semana": !travado && !ofi && (meus || m !== "draft"),
+    "box-semana": !travado && !ofi && !cont && (meus || m !== "draft"),
     "box-modo": !travado && !nada,
     "box-ligas": !travado && !nada,
-    "box-cal": !travado && !ofi && (meus || m !== "draft"),
+    "box-cal": !travado && !ofi && !cont && (meus || m !== "draft"),
     "box-outros": !travado && !nada && varre,
     "box-banco": !travado && !nada && varre,
     "box-terca": !travado && !nada && m === "terca",
@@ -1773,6 +2044,7 @@ function aplicarPainel() {
     "painel-meus": !travado && meus && !pess,
     "painel-pessoal": !travado && pess,
     "painel-oficiais": !travado && ofi,
+    "painel-contender": !travado && cont,
     "box-rodar": !travado && !nada,
   };
   for (const [id, v] of Object.entries(vis)) $(id).hidden = !v;
@@ -3907,6 +4179,7 @@ $("rodarMeus").addEventListener("click", rodarMeus);
 $("rodarPessoal").addEventListener("click", rodarPessoal);
 $("tankBox").addEventListener("toggle", () => { if ($("tankBox").open) carregarLigasTank(false); });
 $("rodarTank").addEventListener("click", rodarTank);
+$("rodarContender").addEventListener("click", rodarContender);
 $("tankId").addEventListener("keydown", (e) => { if (e.key === "Enter") rodarTank(); });
 $("usuarioP").addEventListener("change", () => { TANK.ligas = null; if ($("tankBox").open) carregarLigasTank(true); });
 $("atualizarOf").addEventListener("click", () => carregarListaOficial(true));
