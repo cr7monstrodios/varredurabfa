@@ -1618,6 +1618,11 @@ async function analisarContender(lid) {
     const tit = mt ? mt.starters : (meu.starters || []), rp = league.roster_positions || [];
     let fr = {}; try { fr = mapearFranquias({ id: lid }, league, users || [], rosters).fr || {}; } catch (e) {}
     const minhaFr = fr[meu.roster_id] || null, sigFr = minhaFr ? ABBR[minhaFr] : null;
+    // liga franchise: só dá para tirar um franchise titular se sobrar acima do mínimo
+    const ligaSite = LIGAS.find(l => l.id === lid), cM = configMinhas([{ league_id: lid, name: league.name }]).cfg[lid];
+    const minimoFr = ligaSite ? ligaSite.min : cM && cM.on ? cM.min : null;
+    const ehMeuFr = id => !!sigFr && !!players[id] && players[id].team === sigFr;
+    const folgaFr = sigFr && minimoFr ? tit.filter(id => ehMeuFr(id) && (!players[id].injury_status || players[id].injury_status === "Questionable")).length - minimoFr : Infinity;
     const limite = parseInt($("cVitorias").value, 10); const N = Number.isFinite(limite) ? limite : 2;
     const mA = parseInt($("pMargemA").value, 10) || 3, mD = parseInt($("pMargemD").value, 10) || 5;
     const vendedores = rosters.filter(r => r.roster_id !== meu.roster_id && ((r.settings || {}).wins || 0) <= N);
@@ -1626,17 +1631,20 @@ async function analisarContender(lid) {
       const p = players[id], md = med2[id]; if (!p || !p.team || !md) continue;
       if (posDe(p).some(x => x === "K" || x === "DEF")) continue;
       let melhor = null;
+      const candFr = !!sigFr && p.team === sigFr;
       tit.forEach((sid, i) => {
         const sl = rp[i]; if (!sl || !SLOT_ELEG[sl] || !cabeNoSlot(p, sl)) return;
         const vazio = !sid || sid === "0", mS = vazio ? 0 : (med1[sid] ? med1[sid].m : 0);
+        const tiraFr = !vazio && ehMeuFr(sid) && !candFr;
+        if (tiraFr && folgaFr <= 0) return;   // ficaria abaixo do mínimo de franchises
         const ganho = md.m - mS, margem = SLOTS_IDP.has(sl) ? mD : mA;
-        if (ganho >= margem && (!melhor || ganho > melhor.ganho)) melhor = { ganho, sl, sai: vazio ? "a vaga vazia" : nomeDe(players[sid]) + " (" + num(mS) + ")" };
+        if (ganho >= margem && (!melhor || ganho > melhor.ganho)) melhor = { ganho, sl, sai: vazio ? "a vaga vazia" : nomeDe(players[sid]) + " (" + num(mS) + ")" + (tiraFr ? ", um franchise (você tem " + folgaFr + " acima do mínimo)" : "") };
       });
       if (melhor) alvos.push({ id, p, md, de: r, ...melhor, franquia: !!sigFr && p.team === sigFr });
     }
     alvos.sort((a, b) => b.ganho - a.ganho);
     st.res.contenderLiga = { lid, nome: league.name, av, ord, pos, nomeR, porId, meu, prox, seguinte, rodadas, picks, redraft, minhasSeguinte, vendedores, alvos: alvos.slice(0, 20), nAlvos: alvos.length,
-      N, mA, mD, minhaFr, erroMt: falhas.length ? falhas[0] : null, semanas: ultima };
+      N, mA, mD, minhaFr, minimoFr, folgaFr, erroMt: falhas.length ? falhas[0] : null, semanas: ultima };
     st.vistaContender = "liga";
     if (st.grupo === "contender") { desenharLigaContender(st.res.contenderLiga); window.scrollTo(0, $("resultado").offsetTop - 8); }
     status("Pronto.");
@@ -1704,7 +1712,7 @@ function desenharLigaContender(c) {
   const cardA = el("div", { class: "card-b" });
   cardA.appendChild(el("div", { class: "foot", text: "Times com até " + c.N + (c.N === 1 ? " vitória" : " vitórias") + ": " + (c.vendedores.length ? c.vendedores.map(r => "@" + c.nomeR(r) + " (" + recorde(campanhaDe(c.ord, r)) + ")").join(", ") : "nenhum") +
     ". Alvo = jogador deles com média (na pontuação desta liga, " + (c.semanas ? "semanas 1 a " + c.semanas : "sem semanas") + ", mínimo 2 jogos) pelo menos " + c.mA + " pontos acima do seu titular da vaga no ataque, ou " + c.mD + " na defesa." +
-    (c.minhaFr ? " ★ = jogador da sua franquia (" + c.minhaFr + ")." : "") }));
+    (c.minhaFr ? " ★ = jogador da sua franquia (" + c.minhaFr + ")." + (c.minimoFr ? " Franchise titular só sai se você ficar acima do mínimo (" + c.minimoFr + ")." : "") : "") }));
   if (!c.alvos.length) cardA.appendChild(el("div", { class: "foot", text: "Nenhum jogador desses times melhora o seu time titular por essa diferença." }));
   else {
     const ul = el("ul", { class: "lst" });
