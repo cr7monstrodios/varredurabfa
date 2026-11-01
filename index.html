@@ -115,6 +115,8 @@ td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .abas button { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px;
   padding: 8px 12px; font: 700 15px var(--display); letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
 .abas button[aria-selected="true"] { background: var(--turf); color: #fff; border-color: var(--turf); }
+.abas a.planilha { flex: none; border: 1px solid var(--turf); color: var(--turf); background: transparent; border-radius: 10px; padding: 8px 12px;
+  font: 700 15px var(--display); letter-spacing: .04em; text-transform: uppercase; text-decoration: none; }
 #box-banco select, .op select { font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
 .formacao { display: grid; gap: 6px; margin-top: 4px; }
 .minhas-l { display: grid; gap: 8px; margin-top: 6px; }
@@ -182,6 +184,12 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   </header>
 
   <nav id="abas" class="abas" role="tablist" aria-label="Grupos de ligas"></nav>
+  <div id="linkSenha" class="toolbar" hidden style="margin:-2px 0 10px">
+    <span class="hint">Digite a senha uma vez para liberar o atalho da planilha neste aparelho:</span>
+    <input id="senhaLink" type="password" class="txt" autocomplete="current-password" aria-label="Senha para liberar o atalho da planilha">
+    <button id="entrarLink" class="btn ghost" type="button">Liberar</button>
+    <span id="statusLink" class="status" role="status"></span>
+  </div>
   <section class="panel" aria-label="Configurar varredura">
     <div id="nota-grupo" class="hint" hidden></div>
     <div class="row">
@@ -286,7 +294,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 31/10/2026 (aviso quando o Sleeper limita as consultas)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 01/11/2026 (atalho para a planilha)</p>
 </div>
 
 <script>
@@ -400,6 +408,12 @@ function desenharAbas() {
       if (g.soTravado) setTimeout(() => $("senha").focus(), 0); });
     box.appendChild(b);
   });
+  if (liberado()) {   // atalho para a planilha (o link só existe no aparelho com a chave da senha)
+    const a = el("a", { id: "linkPlanilha", class: "planilha", href: "#" }, "📊 Planilha");
+    a.addEventListener("click", (e) => { if (a.dataset.pronto) return; e.preventDefault(); $("linkSenha").hidden = false; $("senhaLink").focus(); });
+    box.appendChild(a); prepararLinkPlanilha();
+  }
+  if (!liberado()) $("linkSenha").hidden = true;
   const gA = GRUPOS.find(g => g.id === st.grupo);
   $("nota-grupo").textContent = gA.nota; $("nota-grupo").hidden = !gA.nota;
   aplicarPainel();
@@ -1485,9 +1499,40 @@ async function entrar() {
     st.grupo = h === SENHA_PESSOAL_SHA256 ? "pessoal" : "bfa"; desenharAbas(); desenharLigas(); redesenhar();
   } else { $("senhaMsg").textContent = "Senha errada."; }
 }
+// Atalho para a planilha BFA_Controle_WO_2026 (aba Registro). O código do site é público, então o link fica cifrado
+// com a chave de cada senha e só aparece no aparelho liberado (que guarda essa chave).
+const PLANILHA_LINK_CIFRADO = [{"i":"S8aj6GQdIW7mgR7I","c":"RiX2DOUgIZhlk4nvBk+CvyyFLsMnSkQkgYIRvQPsPYCpbiQZuqKT1V0pK+b7q7DGneOYH/XRTyh5i1ohr6ySZ40C5KnXy87DmIa7jQG4kHYCfLSEsjZaPHsfbn4dOmZ67I0LnDNQNAs="},{"i":"eamZbG4rpaBEG8nx","c":"FNcVmZnYjDShFHKBn/LX6b4C20SPOD9HRNLbCADgBiQkdBqE2nycqrd7MDV31UnNyUSIwt1k5MkzUxyc5mgdHZ/1T6jCURaQ852nlvnbSSE3oyc2ZSkPmj1xqrKjzmpW+KPc5Fwsru8="}];
+const PLANILHA_GID_REGISTRO = "1774842015";
+async function linkDaPlanilha() {
+  const ch = armazenar.get("bfa-chave");
+  if (!ch || !/^[0-9a-f]{64}$/.test(ch)) return null;
+  if (st.linkPlanilha && st.linkPlanilha.ch === ch) return st.linkPlanilha.url;
+  const b64 = t => Uint8Array.from(atob(t), c => c.charCodeAt(0));
+  try {
+    const key = await crypto.subtle.importKey("raw", new Uint8Array(ch.match(/../g).map(x => parseInt(x, 16))), "AES-GCM", false, ["decrypt"]);
+    for (const x of PLANILHA_LINK_CIFRADO) {
+      try { const url = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(x.i) }, key, b64(x.c))); st.linkPlanilha = { ch, url }; return url; } catch (e) {}
+    }
+  } catch (e) {}
+  return null;
+}
+async function prepararLinkPlanilha() {
+  const a = $("linkPlanilha"); if (!a) return;
+  const url = await linkDaPlanilha();
+  if (url) { a.href = url + "#gid=" + PLANILHA_GID_REGISTRO; a.target = "_blank"; a.rel = "noopener"; a.title = "Abre a planilha na aba Registro"; a.dataset.pronto = "1"; }
+  else { a.href = "#"; a.removeAttribute("target"); a.title = "Digite a senha uma vez para liberar o link neste aparelho"; a.dataset.pronto = ""; }
+}
+async function liberarLink() {
+  const v = $("senhaLink").value.trim(); let h = "";
+  try { h = await sha256(v); } catch (e) {}
+  if (h !== SENHA_SHA256 && h !== SENHA_PESSOAL_SHA256) { $("statusLink").textContent = "Senha errada."; $("statusLink").className = "status err"; return; }
+  armazenar.set("bfa-chave", await chaveDaSenha(v)); $("senhaLink").value = ""; $("statusLink").textContent = ""; $("statusLink").className = "status";
+  $("linkSenha").hidden = true; await prepararLinkPlanilha();
+  if (st.grupo === "oficiais") estadoOficiais();
+}
 function bloquear() {
   try { localStorage.removeItem("bfa-liberado"); localStorage.removeItem("bfa-pessoal"); localStorage.removeItem("bfa-chave"); } catch (e) {}
-  st.listaOficial = null;
+  st.listaOficial = null; st.linkPlanilha = null;
   st.grupo = "meus"; desenharAbas(); desenharLigas(); redesenhar();
 }
 
@@ -1590,7 +1635,7 @@ async function liberarPlanilha() {
   try { h = await sha256(v); } catch (e) {}
   if (h !== SENHA_SHA256 && h !== SENHA_PESSOAL_SHA256) { $("statusOf").textContent = "Senha errada."; $("statusOf").className = "status err"; return; }
   armazenar.set("bfa-chave", await chaveDaSenha(v)); $("senhaOf").value = ""; $("statusOf").textContent = ""; $("statusOf").className = "status";
-  estadoOficiais(); carregarListaOficial(true);
+  estadoOficiais(); carregarListaOficial(true); prepararLinkPlanilha();
 }
 // o que está neste aparelho e ainda não está na planilha (ou está mais velho lá)
 function pendentesLocais() {
@@ -3842,6 +3887,8 @@ $("modo-dom").addEventListener("click", () => setModo("dom"));
 $("modo-terca").addEventListener("click", () => setModo("terca"));
 $("modo-draft").addEventListener("click", () => setModo("draft"));
 $("entrar").addEventListener("click", entrar);
+$("entrarLink").addEventListener("click", liberarLink);
+$("senhaLink").addEventListener("keydown", (e) => { if (e.key === "Enter") liberarLink(); });
 $("senha").addEventListener("keydown", (e) => { if (e.key === "Enter") entrar(); });
 $("bloquear").addEventListener("click", bloquear);
 $("planilha").addEventListener("change", async () => {
