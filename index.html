@@ -269,11 +269,12 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       </details>
     </div>
     <div id="painel-contender" class="meus" hidden>
+      <label class="f">Franquia ou usuário do Sleeper <input id="cBusca" type="text" class="txt" placeholder="Ex.: Bears, Giants ou um usuário" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="op"><span>Para os alvos de troca, campanha ruim é ter até
         <select id="cVitorias" aria-label="Máximo de vitórias"><option value="0">0</option><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select> vitórias
-        (a diferença mínima de média é a mesma do Meu painel)</span></label>
+        (diferença mínima de média: 3 pontos no ataque e 5 na defesa)</span></label>
       <div class="toolbar">
-        <button id="rodarContender" class="btn" type="button">Ver minhas campanhas</button>
+        <button id="rodarContender" class="btn" type="button">Analisar</button>
         <span id="statusContender" class="status" role="status" aria-live="polite"></span>
       </div>
     </div>
@@ -303,7 +304,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 01/11/2026 (aba Contender? e campanha no Meu painel)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 03/11/2026 (Contender? enxuto, por franquia ou usuário)</p>
 </div>
 
 <script>
@@ -336,7 +337,7 @@ const GRUPOS = [
   { id: "oficiais", nome: "Varreduras oficiais",  nota: "Toda varredura marcada como oficial fica guardada aqui, semana por semana, com a mensagem de cada liga. Com a planilha ligada, todo comissário vê as mesmas, em qualquer aparelho, e a conferência de terça usa a daqui.", restrito: true },
   { id: "meus",  nome: "Meus times",             nota: "Todas as ligas da temporada de um usuário do Sleeper, sem entrar uma por uma: titulares de bye, sem time, OUT, DOUB, IR, SUS, NA ou DNR e spots vazios. Usa a semana e o calendário escolhidos acima." },
   { id: "pessoal", nome: "Meu painel",            nota: "Só seu: revisa os seus times em todas as ligas, confere as franchises nas suas ligas franchise e aponta reservas fortes no banco.", restrito: true, pessoal: true },
-  { id: "contender", nome: "Contender?",          nota: "Só seu: a sua campanha em cada liga e se dá para brigar pelo título. Abrindo uma liga: as picks de 1ª, 2ª e 3ª rodada do próximo draft e jogadores de times com campanha ruim que melhorariam o seu time.", restrito: true, pessoal: true },
+  { id: "contender", nome: "Contender?",          nota: "Digite uma franquia (Bears, Giants…) para ver esse time em todas as ligas do site, ou um usuário do Sleeper para ver todas as ligas dele. Mostra a campanha e, onde ela é positiva e o time tem pick de 1ª e de 2ª, jogadores bons de times com campanha ruim que melhorariam o time.", restrito: true },
   { id: "comissario", nome: "Comissário",       nota: "", soTravado: true },
 ];
 // Se um time não for reconhecido pelo nome, ligue aqui: { "<id da liga>": { "<nick do GM>": "Franquia" } }
@@ -1480,16 +1481,17 @@ function desenharTank(t) {
       el("div", { class: "card-b" }, ul)));
   }
 }
-// ---------------------------------------------------------------- Contender? (só o Trajano)
-// Lista: a campanha em cada liga e o veredito (classificação geral; não considera vaga garantida de divisão).
-// Liga aberta: classificação, picks de 1ª, 2ª e 3ª rodada do próximo draft (ordem projetada pela classificação de hoje:
-// pior campanha escolhe primeiro) e jogadores de times com campanha ruim que melhorariam o seu time titular.
+// ---------------------------------------------------------------- Contender? (comissários)
+// Busca por franquia (Bears, Giants…: esse time em todas as ligas do site), por usuário do Sleeper (todas as ligas dele)
+// ou por nome de time/GM nas ligas do site. Para cada liga: campanha e veredito (classificação geral, sem vaga garantida de divisão).
+// Onde a campanha está positiva e o time tem pick de 1ª e de 2ª (próximo draft ou o seguinte), lista jogadores de times
+// com campanha ruim que melhorariam o time titular.
 const VEREDITOS = {
   contender: { rot: "🏆 Contender", cls: "ok", ordem: 0 },
   briga: { rot: "⚖️ Na briga", cls: "info", ordem: 1 },
   atras: { rot: "📉 Correndo atrás", cls: "warn", ordem: 2 },
   rebuild: { rot: "🔨 Rebuild", cls: "wo", ordem: 3 },
-  sem: { rot: "Sem playoff definido", cls: "info", ordem: 4 },
+  sem: { rot: "➖ Sem playoff definido", cls: "info", ordem: 4 },
 };
 const vitoriasDe = r => ((r.settings || {}).wins || 0) + 0.5 * ((r.settings || {}).ties || 0);
 const nVit = x => (Number.isInteger(x) ? String(x) : num(x)) + (x === 1 ? " vitória" : " vitórias");
@@ -1514,65 +1516,8 @@ function avaliarContender(league, rosters, meu) {
     }
   }
   partes.push(pfPos + "º em pontos feitos");
-  partes.push(restantes ? "faltam " + restantes + (restantes > 1 ? " jogos" : " jogo") + " na temporada regular" : "temporada regular no fim");
-  if (vagas && camp.pos > vagas && -dif > restantes) partes.push("não alcança mais a vaga pelas vitórias");
+  partes.push(restantes ? "faltam " + restantes + (restantes > 1 ? " jogos" : " jogo") : "temporada regular no fim");
   return { camp, vagas, restantes, pfPos, veredito, motivo: partes.join("; "), dif };
-}
-async function rodarContender() {
-  const btn = $("rodarContender"); const status = (t, err) => { $("statusContender").textContent = t; $("statusContender").className = "status" + (err ? " err" : ""); };
-  const usuario = ($("usuarioP").value || "").trim() || "Apenastraja";
-  btn.disabled = true; status("Conferindo a semana no Sleeper…");
-  try {
-    await conferirSemana();
-    const u = await getJSON("/user/" + encodeURIComponent(usuario));
-    if (!u || !u.user_id) { status("Não achei o usuário \"" + usuario + "\" no Sleeper.", true); return; }
-    const estado = await getJSON("/state/nfl");
-    const temporada = estado.league_season || estado.season;
-    const ligas = ((await getJSON("/user/" + u.user_id + "/leagues/nfl/" + temporada)) || []).filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
-    const ordemFixa = ORDEM_POR_USUARIO[String(u.username || usuario).toLowerCase()] || [];
-    const posL = id => { const i = ordemFixa.indexOf(id); return i >= 0 ? i : 10000; };
-    const res = { usuario: u.display_name || usuario, uid: u.user_id, ligas: [], semTime: [], erros: [] };
-    let feitas = 0;
-    await emLotes(ligas, 6, async (lg) => {
-      try {
-        const [league, rosters] = await Promise.all([getJSON("/league/" + lg.league_id), getJSON("/league/" + lg.league_id + "/rosters")]);
-        const meu = (rosters || []).find(r => r.owner_id === u.user_id || (r.co_owners || []).includes(u.user_id));
-        if (!meu) { res.semTime.push(lg.name); return; }
-        res.ligas.push({ id: lg.league_id, nome: lg.name, ordem: posL(lg.league_id) * 1000 + ligas.indexOf(lg), tipo: (league.settings || {}).type, ...avaliarContender(league, rosters, meu) });
-      } catch (e) { res.erros.push(lg.name); res.erro = e.message; }
-      feitas++; status("Lendo ligas… " + feitas + "/" + ligas.length);
-    });
-    res.ligas.sort((a, b) => (VEREDITOS[a.veredito].ordem - VEREDITOS[b.veredito].ordem) || (a.ordem - b.ordem));
-    const agora = new Date();
-    res.quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    st.res.contender = res; st.vistaContender = "lista";
-    if (st.grupo === "contender") desenharContender();
-    status("Pronto. " + res.quando + ".");
-  } catch (e) {
-    status("Não consegui falar com o Sleeper: " + e.message + ". " + DICA_LIMITE, true);
-  } finally { btn.disabled = false; }
-}
-function desenharContender() {
-  if (st.vistaContender === "liga" && st.res.contenderLiga) return desenharLigaContender(st.res.contenderLiga);
-  const r = st.res.contender, box = $("resultado"); box.textContent = "";
-  if (!r) return;
-  const conta = k => r.ligas.filter(l => l.veredito === k).length;
-  box.appendChild(el("div", { class: "summary" },
-    el("span", { class: "count", text: "@" + r.usuario }),
-    ...["contender", "briga", "atras", "rebuild"].map(k => el("span", { class: "pill " + VEREDITOS[k].cls, text: VEREDITOS[k].rot + ": " + conta(k) })),
-    el("span", { class: "foot", text: r.ligas.length + " ligas · " + r.quando })));
-  box.appendChild(el("p", { class: "foot", text: "Pela classificação geral (vitórias, depois pontos feitos), sem contar vaga garantida de divisão. Contender: dentro da zona de playoff e entre os que mais pontuam. Na briga: dentro, mas pontuando menos que a campanha sugere, ou fora por até 1 vitória. Correndo atrás: fora por 2 vitórias ou mais. Rebuild: não alcança mais a vaga, ou está 3 vitórias atrás e na metade de baixo em pontos. Toque em \"Analisar\" para ver as picks e os alvos de troca." }));
-  if (r.erros.length) box.appendChild(el("p", { class: "status err", text: "Não consegui ler: " + r.erros.join(", ") + " (" + r.erro + "). " + DICA_LIMITE }));
-  if (r.semTime.length) box.appendChild(el("p", { class: "foot", text: "Sem time seu em: " + r.semTime.join(", ") + "." }));
-  for (const l of r.ligas) {
-    const v = VEREDITOS[l.veredito];
-    const b = el("button", { class: "btn ghost", type: "button" }, "Analisar");
-    b.addEventListener("click", () => analisarContender(l.id));
-    box.appendChild(el("article", { class: "card" },
-      el("div", { class: "card-h" }, el("div", {}, el("h2", { text: l.nome }),
-        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + v.cls, text: v.rot }), el("span", { class: "foot", text: txtCampanha(l.camp) })))),
-      el("div", { class: "card-b" }, el("div", { class: "foot", text: l.motivo.charAt(0).toUpperCase() + l.motivo.slice(1) + "." }), el("div", { class: "toolbar" }, b))));
-  }
 }
 // médias da liga com um mínimo de jogos (o titular conta com 1 jogo; o alvo de troca precisa de 2)
 function mediasMin(semanasMatchups, minJ) {
@@ -1583,148 +1528,187 @@ function mediasMin(semanasMatchups, minJ) {
   const med = {}; for (const id of Object.keys(soma)) if (n[id] >= minJ) med[id] = { m: soma[id] / n[id], j: n[id] };
   return med;
 }
-async function analisarContender(lid) {
-  const status = (t, err) => { $("statusContender").textContent = t; $("statusContender").className = "status" + (err ? " err" : ""); };
-  const uid = st.res.contender && st.res.contender.uid;
-  if (!uid) { status("Toque em \"Ver minhas campanhas\" primeiro.", true); return; }
-  status("Lendo a liga…");
-  try {
-    const [league, users, rosters, trocadas] = await Promise.all([getJSON("/league/" + lid), getJSON("/league/" + lid + "/users").catch(() => []),
-      getJSON("/league/" + lid + "/rosters"), getJSON("/league/" + lid + "/traded_picks").catch(() => [])]);
-    const meu = rosters.find(r => r.owner_id === uid || (r.co_owners || []).includes(uid));
-    if (!meu) { status("Você não tem time nesta liga.", true); return; }
-    const byUser = {}; (users || []).forEach(x => { byUser[x.user_id] = x; });
-    const nomeR = r => { const x = byUser[r.owner_id] || {}; return x.display_name || ((x.metadata || {}).team_name) || "time " + r.roster_id; };
-    const porId = {}; rosters.forEach(r => { porId[r.roster_id] = r; });
-    const av = avaliarContender(league, rosters, meu), { ord, pos } = classificacao(rosters);
-    const cfg = league.settings || {};
-    // picks do próximo draft (1ª a 3ª rodada): dono atual de cada uma e posição projetada (pior campanha primeiro)
-    const prox = String(Number(league.season || temporadaAtual()) + 1);
-    const rodadas = [1, 2, 3].filter(rd => rd <= (cfg.draft_rounds || 3));
-    const inv = ord.slice().reverse(), slot = {}; inv.forEach((r, i) => { slot[r.roster_id] = i + 1; });
-    const dono = (season, rd, orig) => { const t = (trocadas || []).find(x => String(x.season) === season && x.round === rd && x.roster_id === orig); return t ? t.owner_id : orig; };
-    const redraft = (cfg.type || 0) === 0;
-    const picks = redraft ? [] : rodadas.flatMap(rd => inv.map(r => ({ rd, slot: slot[r.roster_id], orig: r.roster_id, dono: dono(prox, rd, r.roster_id) })));
-    const seguinte = String(Number(prox) + 1);
-    const minhasSeguinte = redraft ? 0 : rodadas.reduce((a, rd) => a + rosters.filter(r => dono(seguinte, rd, r.roster_id) === meu.roster_id).length, 0);
-    // alvos de troca: jogadores de times com até N vitórias que melhorariam um titular seu
-    const players = await carregarJogadores(status);
-    const ultima = Math.max(0, ultimaSemanaCompleta(st.semanaSleeper || 1));
-    status("Lendo as rodadas da liga…");
-    const falhas = [], ant = (await rodadasAnteriores(lid, ultima, falhas)).map(x => x || []);
-    const med2 = mediasMin(ant, 2), med1 = mediasMin(ant, 1);
-    const atual = st.semanaSleeper ? await matchupsDe(lid, st.semanaSleeper).catch(() => []) : [];
-    const mt = (atual || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
-    const tit = mt ? mt.starters : (meu.starters || []), rp = league.roster_positions || [];
-    let fr = {}; try { fr = mapearFranquias({ id: lid }, league, users || [], rosters).fr || {}; } catch (e) {}
-    const minhaFr = fr[meu.roster_id] || null, sigFr = minhaFr ? ABBR[minhaFr] : null;
-    // liga franchise: só dá para tirar um franchise titular se sobrar acima do mínimo
-    const ligaSite = LIGAS.find(l => l.id === lid), cM = configMinhas([{ league_id: lid, name: league.name }]).cfg[lid];
-    const minimoFr = ligaSite ? ligaSite.min : cM && cM.on ? cM.min : null;
-    const ehMeuFr = id => !!sigFr && !!players[id] && players[id].team === sigFr;
-    const folgaFr = sigFr && minimoFr ? tit.filter(id => ehMeuFr(id) && (!players[id].injury_status || players[id].injury_status === "Questionable")).length - minimoFr : Infinity;
-    const limite = parseInt($("cVitorias").value, 10); const N = Number.isFinite(limite) ? limite : 2;
-    const mA = parseInt($("pMargemA").value, 10) || 3, mD = parseInt($("pMargemD").value, 10) || 5;
-    const vendedores = rosters.filter(r => r.roster_id !== meu.roster_id && ((r.settings || {}).wins || 0) <= N);
-    const alvos = [];
-    for (const r of vendedores) for (const id of (r.players || [])) {
-      const p = players[id], md = med2[id]; if (!p || !p.team || !md) continue;
-      if (posDe(p).some(x => x === "K" || x === "DEF")) continue;
-      let melhor = null;
-      const candFr = !!sigFr && p.team === sigFr;
-      tit.forEach((sid, i) => {
-        const sl = rp[i]; if (!sl || !SLOT_ELEG[sl] || !cabeNoSlot(p, sl)) return;
-        const vazio = !sid || sid === "0", mS = vazio ? 0 : (med1[sid] ? med1[sid].m : 0);
-        const tiraFr = !vazio && ehMeuFr(sid) && !candFr;
-        if (tiraFr && folgaFr <= 0) return;   // ficaria abaixo do mínimo de franchises
-        const ganho = md.m - mS, margem = SLOTS_IDP.has(sl) ? mD : mA;
-        if (ganho >= margem && (!melhor || ganho > melhor.ganho)) melhor = { ganho, sl, sai: vazio ? "a vaga vazia" : nomeDe(players[sid]) + " (" + num(mS) + ")" + (tiraFr ? ", um franchise (você tem " + folgaFr + " acima do mínimo)" : "") };
-      });
-      if (melhor) alvos.push({ id, p, md, de: r, ...melhor, franquia: !!sigFr && p.team === sigFr });
-    }
-    alvos.sort((a, b) => b.ganho - a.ganho);
-    st.res.contenderLiga = { lid, nome: league.name, av, ord, pos, nomeR, porId, meu, prox, seguinte, rodadas, picks, redraft, minhasSeguinte, vendedores, alvos: alvos.slice(0, 20), nAlvos: alvos.length,
-      N, mA, mD, minhaFr, minimoFr, folgaFr, erroMt: falhas.length ? falhas[0] : null, semanas: ultima };
-    st.vistaContender = "liga";
-    if (st.grupo === "contender") { desenharLigaContender(st.res.contenderLiga); window.scrollTo(0, $("resultado").offsetTop - 8); }
-    status("Pronto.");
-  } catch (e) {
-    status("Não consegui ler a liga: " + e.message + ". " + DICA_LIMITE, true);
+// franquia digitada: "Bears", "bears", "Chicago", "CHI", "49ers"…
+function franquiaDaBusca(q) {
+  const n = norm(q).trim(); if (!n) return null;
+  for (const t of Object.keys(KEYS)) {
+    if (norm(t) === n || ABBR[t].toLowerCase() === n) return t;
+    if (KEYS[t].some(k => { const kk = k.trim(); return kk === n || (n.length >= 4 && kk.length >= 4 && n.includes(kk)); })) return t;
   }
+  return null;
 }
-const rotPick = (rd, sl) => rd + "." + String(sl).padStart(2, "0");
-function textoLigaContender(c) {
-  const v = VEREDITOS[c.av.veredito], L = ["*" + c.nome.toUpperCase() + " — " + v.rot.toUpperCase() + "*", txtCampanha(c.av.camp) + ". " + c.av.motivo.charAt(0).toUpperCase() + c.av.motivo.slice(1) + "."];
-  if (!c.redraft) {
-    L.push("", "*PICKS " + c.prox + " (projeção pela classificação de hoje)*");
-    const minhas = c.picks.filter(p => p.dono === c.meu.roster_id);
-    L.push("Suas: " + (minhas.length ? minhas.map(p => rotPick(p.rd, p.slot) + (p.orig === c.meu.roster_id ? " (própria)" : " (do @" + c.nomeR(c.porId[p.orig]) + ")")).join(", ") : "nenhuma nas 3 primeiras rodadas"));
-    c.picks.filter(p => p.orig === c.meu.roster_id && p.dono !== c.meu.roster_id).forEach(p => L.push("Sua " + p.rd + "ª está com @" + c.nomeR(c.porId[p.dono])));
-  }
-  if (c.alvos.length) {
-    L.push("", "*ALVOS EM TIMES COM ATÉ " + c.N + " VITÓRIAS*");
-    c.alvos.slice(0, 10).forEach(a => L.push("• " + nomeDe(a.p) + " (" + posDe(a.p).join("/") + ", " + a.p.team + ") média " + num(a.md.m) + " · do @" + c.nomeR(a.de) + " (" + recorde(campanhaDe(c.ord, a.de)) + ") · entra no lugar de " + a.sai));
-  }
-  return L.join("\n");
+// picks de 1ª e 2ª rodada do time no próximo draft e no seguinte (as trocadas vêm do Sleeper; o resto é de quem era)
+function picksDoTime(league, rosters, trocadas, rid) {
+  const prox = Number(league.season || temporadaAtual()) + 1, anos = [String(prox), String(prox + 1)];
+  const dono = (season, rd, orig) => { const t = (trocadas || []).find(x => String(x.season) === season && x.round === rd && x.roster_id === orig); return t ? t.owner_id : orig; };
+  const conta = {}; let p1 = 0, p2 = 0;
+  for (const a of anos) { conta[a] = {}; for (const rd of [1, 2]) { const k = rosters.filter(r => dono(a, rd, r.roster_id) === rid).length; conta[a][rd] = k; if (rd === 1) p1 += k; else p2 += k; } }
+  const parte = (rd, k) => k ? rd + "ª" + (k > 1 ? " ×" + k : "") : "";
+  const txt = anos.map(a => { const t = [parte(1, conta[a][1]), parte(2, conta[a][2])].filter(Boolean).join(", "); return a + ": " + (t || "nenhuma"); }).join(" · ");
+  return { anos, conta, tem: p1 > 0 && p2 > 0, txt };
 }
-function desenharLigaContender(c) {
-  const box = $("resultado"); box.textContent = "";
-  const v = VEREDITOS[c.av.veredito];
-  const volta = el("button", { class: "btn ghost", type: "button" }, "← Todas as ligas");
-  volta.addEventListener("click", () => { st.vistaContender = "lista"; desenharContender(); });
-  const fb = el("span", { class: "copied" }), bc = el("button", { class: "btn ghost", type: "button" }, "Copiar análise");
-  bc.addEventListener("click", () => copiar(textoLigaContender(c), fb));
-  box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: c.nome }), el("span", { class: "pill " + v.cls, text: v.rot }),
-    el("span", { class: "foot", text: txtCampanha(c.av.camp) + (c.minhaFr ? " · franquia " + c.minhaFr : "") }), volta, bc, fb));
-  box.appendChild(el("p", { class: "foot", text: c.av.motivo.charAt(0).toUpperCase() + c.av.motivo.slice(1) + "." }));
-  if (c.erroMt) box.appendChild(el("p", { class: "status err", text: "Faltou ler alguma rodada (" + c.erroMt + "): as médias podem estar incompletas. " + DICA_LIMITE }));
-  // classificação
-  const ulC = el("ul", { class: "lst" });
-  c.ord.forEach((r, i) => {
-    const cp = campanhaDe(c.ord, r), eu = r.roster_id === c.meu.roster_id, vend = !eu && cp.v <= c.N;
-    ulC.appendChild(el("li", { class: eu ? "info" : vend ? "warn" : "neutro" }, (i + 1) + "º @" + c.nomeR(r) + " · " + recorde(cp) + " · " + num(cp.pf) + " pts" + (eu ? " (você)" : vend ? " · campanha ruim" : "") + (c.av.vagas && i + 1 === c.av.vagas ? " · última vaga" : "")));
-  });
-  box.appendChild(el("article", { class: "card" }, el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "Classificação" }))), el("div", { class: "card-b" }, ulC)));
-  // picks
-  const cardP = el("div", { class: "card-b" });
-  if (c.redraft) cardP.appendChild(el("div", { class: "foot", text: "Liga redraft: não há picks futuras para trocar." }));
-  else {
-    const minhas = c.picks.filter(p => p.dono === c.meu.roster_id), perdidas = c.picks.filter(p => p.orig === c.meu.roster_id && p.dono !== c.meu.roster_id);
-    cardP.appendChild(el("div", { class: "foot", text: "Ordem projetada pela classificação de hoje (pior campanha escolhe primeiro). Suas: " +
-      (minhas.length ? minhas.map(p => rotPick(p.rd, p.slot) + (p.orig === c.meu.roster_id ? " própria" : " do @" + c.nomeR(c.porId[p.orig]))).join(", ") : "nenhuma") +
-      (perdidas.length ? ". Trocadas: " + perdidas.map(p => "sua " + p.rd + "ª com @" + c.nomeR(c.porId[p.dono])).join(", ") : "") + ". Em " + c.seguinte + ": " + c.minhasSeguinte + " picks nas 3 primeiras rodadas." }));
-    // quem tem muita pick boa: parceiro para trocar
-    const qtd = {}; c.picks.filter(p => p.rd <= 2).forEach(p => { qtd[p.dono] = (qtd[p.dono] || 0) + 1; });
-    const ricos = Object.entries(qtd).filter(([d, n]) => n > 2 && +d !== c.meu.roster_id).sort((a, b) => b[1] - a[1]);
-    if (ricos.length) cardP.appendChild(el("div", { class: "foot", text: "Com mais picks de 1ª e 2ª: " + ricos.map(([d, n]) => "@" + c.nomeR(c.porId[d]) + " (" + n + ")").join(", ") + "." }));
-    for (const rd of c.rodadas) {
-      const ul = el("ul", { class: "lst" });
-      c.picks.filter(p => p.rd === rd).forEach(p => {
-        const minha = p.dono === c.meu.roster_id, trocada = p.dono !== p.orig, oR = c.porId[p.orig];
-        const txt = rotPick(rd, p.slot) + " · do @" + c.nomeR(oR) + " (" + recorde(campanhaDe(c.ord, oR)) + ")" + (trocada ? " · com @" + c.nomeR(c.porId[p.dono]) : "") + (minha ? " · SUA" : "");
-        ul.appendChild(el("li", { class: minha ? "info" : p.orig === c.meu.roster_id ? "warn" : "neutro" }, txt));
-      });
-      cardP.appendChild(el("div", { class: "gm", text: rd + "ª rodada" })); cardP.appendChild(ul);
-    }
-  }
-  box.appendChild(el("article", { class: "card" }, el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "Picks " + c.prox + " · 1ª a 3ª rodada" }))), cardP));
-  // alvos de troca
-  const cardA = el("div", { class: "card-b" });
-  cardA.appendChild(el("div", { class: "foot", text: "Times com até " + c.N + (c.N === 1 ? " vitória" : " vitórias") + ": " + (c.vendedores.length ? c.vendedores.map(r => "@" + c.nomeR(r) + " (" + recorde(campanhaDe(c.ord, r)) + ")").join(", ") : "nenhum") +
-    ". Alvo = jogador deles com média (na pontuação desta liga, " + (c.semanas ? "semanas 1 a " + c.semanas : "sem semanas") + ", mínimo 2 jogos) pelo menos " + c.mA + " pontos acima do seu titular da vaga no ataque, ou " + c.mD + " na defesa." +
-    (c.minhaFr ? " ★ = jogador da sua franquia (" + c.minhaFr + ")." + (c.minimoFr ? " Franchise titular só sai se você ficar acima do mínimo (" + c.minimoFr + ")." : "") : "") }));
-  if (!c.alvos.length) cardA.appendChild(el("div", { class: "foot", text: "Nenhum jogador desses times melhora o seu time titular por essa diferença." }));
-  else {
-    const ul = el("ul", { class: "lst" });
-    c.alvos.forEach(a => {
-      const s = a.p.injury_status && a.p.injury_status !== "Questionable" ? " · " + (NAO_CONTA[a.p.injury_status] || a.p.injury_status) : "";
-      ul.appendChild(el("li", { class: a.franquia ? "info" : "neutro" }, (a.franquia ? "★ " : "") + nomeDe(a.p) + " (" + posDe(a.p).join("/") + ", " + a.p.team + s + ") · média " + num(a.md.m) + " em " + a.md.j + " jogos · do @" + c.nomeR(a.de) +
-        " (" + recorde(campanhaDe(c.ord, a.de)) + ") · entra no lugar de " + a.sai + " (" + (SLOT_NOME[a.sl] || a.sl) + ", +" + num(a.ganho) + ")"));
+// jogadores de times com até N vitórias que melhoram um titular do time (sem tirar franchise abaixo do mínimo)
+async function alvosDoTime(lid, league, users, rosters, meu, players, opc) {
+  const ultima = Math.max(0, ultimaSemanaCompleta(st.semanaSleeper || 1));
+  const falhas = [], ant = (await rodadasAnteriores(lid, ultima, falhas)).map(x => x || []);
+  const med2 = mediasMin(ant, 2), med1 = mediasMin(ant, 1);
+  const atual = st.semanaSleeper ? await matchupsDe(lid, st.semanaSleeper).catch(() => []) : [];
+  const mt = (atual || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
+  const tit = mt ? mt.starters : (meu.starters || []), rp = league.roster_positions || [];
+  let fr = {}; try { fr = mapearFranquias({ id: lid }, league, users || [], rosters).fr || {}; } catch (e) {}
+  const minhaFr = fr[meu.roster_id] || null, sigFr = minhaFr ? ABBR[minhaFr] : null;
+  const ligaSite = LIGAS.find(l => l.id === lid), cM = configMinhas([{ league_id: lid, name: league.name }]).cfg[lid];
+  const minimoFr = ligaSite ? ligaSite.min : cM && cM.on ? cM.min : null;
+  const ehMeuFr = id => !!sigFr && !!players[id] && players[id].team === sigFr;
+  const folgaFr = sigFr && minimoFr ? tit.filter(id => ehMeuFr(id) && (!players[id].injury_status || players[id].injury_status === "Questionable")).length - minimoFr : Infinity;
+  const vendedores = rosters.filter(r => r.roster_id !== meu.roster_id && ((r.settings || {}).wins || 0) <= opc.N);
+  const gmDe = r => { const x = (users || []).find(y => y.user_id === r.owner_id) || {}; return x.display_name || "time " + r.roster_id; };
+  const alvos = [];
+  for (const r of vendedores) for (const id of (r.players || [])) {
+    const p = players[id], md = med2[id]; if (!p || !p.team || !md) continue;
+    if (posDe(p).some(x => x === "K" || x === "DEF")) continue;
+    const candFr = !!sigFr && p.team === sigFr;
+    let melhor = null;
+    tit.forEach((sid, i) => {
+      const sl = rp[i]; if (!sl || !SLOT_ELEG[sl] || !cabeNoSlot(p, sl)) return;
+      const vazio = !sid || sid === "0", mS = vazio ? 0 : (med1[sid] ? med1[sid].m : 0);
+      const tiraFr = !vazio && ehMeuFr(sid) && !candFr;
+      if (tiraFr && folgaFr <= 0) return;   // ficaria abaixo do mínimo de franchises
+      const ganho = md.m - mS, margem = SLOTS_IDP.has(sl) ? opc.mD : opc.mA;
+      if (ganho >= margem && (!melhor || ganho > melhor.ganho)) melhor = { ganho, sl, sai: vazio ? "a vaga vazia" : nomeDe(players[sid]) + " (" + num(mS) + ")" };
     });
-    cardA.appendChild(ul);
-    if (c.nAlvos > c.alvos.length) cardA.appendChild(el("div", { class: "foot", text: "Mostrando os " + c.alvos.length + " que mais melhoram, de " + c.nAlvos + "." }));
+    if (melhor) alvos.push({ id, p, md, gm: gmDe(r), rec: recorde(campanhaDe(rosters, r)), ...melhor, franquia: candFr });
   }
-  box.appendChild(el("article", { class: "card" }, el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "Alvos de troca" }))), cardA));
+  alvos.sort((a, b) => b.ganho - a.ganho);
+  return { alvos, vendedores, minhaFr, erroMt: falhas.length ? falhas[0] : null };
+}
+async function rodarContender() {
+  const btn = $("rodarContender"); const status = (t, err) => { $("statusContender").textContent = t; $("statusContender").className = "status" + (err ? " err" : ""); };
+  const q = $("cBusca").value.trim();
+  if (!q) { status("Digite uma franquia (Bears, Giants…) ou um usuário do Sleeper.", true); return; }
+  armazenar.set("bfa-contender-busca", q);
+  const limite = parseInt($("cVitorias").value, 10);
+  const opc = { N: Number.isFinite(limite) ? limite : 2, mA: parseInt($("pMargemA").value, 10) || 3, mD: parseInt($("pMargemD").value, 10) || 5 };
+  btn.disabled = true; status("Conferindo a semana no Sleeper…");
+  try {
+    await conferirSemana();
+    const estado = await getJSON("/state/nfl");
+    const temporada = estado.league_season || estado.season;
+    // quem procurar: franquia nas ligas do site > usuário do Sleeper > nome de time ou GM nas ligas do site
+    let modo, titulo, ligas, acha;
+    const fq = franquiaDaBusca(q);
+    const doSite = () => LIGAS.map(l => ({ league_id: l.id, name: l.nome }));
+    if (fq) {
+      modo = "franquia"; titulo = fq; ligas = doSite();
+      acha = (league, users, rosters) => { const { fr } = mapearFranquias({ id: league.league_id }, league, users, rosters); return rosters.filter(r => fr[r.roster_id] === fq); };
+    } else {
+      const u = await getJSON("/user/" + encodeURIComponent(q)).catch(() => null);
+      const dele = u && u.user_id ? ((await getJSON("/user/" + u.user_id + "/leagues/nfl/" + temporada)) || []).filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name)) : [];
+      if (dele.length) {
+        modo = "usuario"; titulo = "@" + (u.display_name || q);
+        const ordemFixa = ORDEM_POR_USUARIO[String(u.username || q).toLowerCase()] || [];
+        ligas = dele.slice().sort((a, b) => { const ia = ordemFixa.indexOf(a.league_id), ib = ordemFixa.indexOf(b.league_id); return (ia < 0 ? 1e4 : ia) - (ib < 0 ? 1e4 : ib); });
+        acha = (league, users, rosters) => rosters.filter(r => r.owner_id === u.user_id || (r.co_owners || []).includes(u.user_id));
+      } else {
+        modo = "time"; titulo = q; ligas = doSite();
+        const nq = norm(q);
+        acha = (league, users, rosters) => { const ids = new Set((users || []).filter(x => norm(((x.metadata || {}).team_name) || "").includes(nq) || norm(x.display_name || "").includes(nq)).map(x => x.user_id));
+          return rosters.filter(r => ids.has(r.owner_id) || (r.co_owners || []).some(c => ids.has(c))); };
+      }
+    }
+    const res = { busca: q, modo, titulo, linhas: [], erros: [], opc };
+    let feitas = 0, players = null;
+    const jogadores = async () => players || (players = await carregarJogadores(status));
+    await emLotes(ligas, 4, async (lg) => {
+      try {
+        const lid = lg.league_id;
+        const [league, rosters, users] = await Promise.all([getJSON("/league/" + lid), getJSON("/league/" + lid + "/rosters"),
+          modo === "usuario" ? Promise.resolve(null) : getJSON("/league/" + lid + "/users").catch(() => [])]);
+        const times = acha(league, users || [], rosters || []);
+        let us = users;
+        for (const meu of times) {
+          const av = avaliarContender(league, rosters, meu), redraft = (((league.settings || {}).type) || 0) === 0;
+          const linha = { id: lid, nome: league.name || lg.name, ordem: ligas.indexOf(lg), ...av, positivo: av.camp.v > av.camp.d, redraft, picks: null, alvos: null };
+          if (modo !== "usuario") { const x = (us || []).find(y => y.user_id === meu.owner_id) || {}; linha.time = "@" + (x.display_name || "?") + (modo === "franquia" ? "" : (x.metadata || {}).team_name ? " (" + x.metadata.team_name + ")" : ""); }
+          if (linha.positivo && !redraft) {
+            const trocadas = await getJSON("/league/" + lid + "/traded_picks").catch(() => []);
+            linha.picks = picksDoTime(league, rosters, trocadas, meu.roster_id);
+            if (linha.picks.tem) {
+              if (!us) us = await getJSON("/league/" + lid + "/users").catch(() => []);
+              const a = await alvosDoTime(lid, league, us, rosters, meu, await jogadores(), opc);
+              linha.alvos = a.alvos; linha.erroMt = a.erroMt; linha.minhaFr = a.minhaFr; linha.nVend = a.vendedores.length;
+            }
+          }
+          res.linhas.push(linha);
+        }
+      } catch (e) { res.erros.push(lg.name); res.erro = e.message; }
+      feitas++; status("Lendo ligas… " + feitas + "/" + ligas.length);
+    });
+    const temAlvo = l => !!(l.alvos && l.alvos.length);
+    res.linhas.sort((a, b) => (temAlvo(b) - temAlvo(a)) || (VEREDITOS[a.veredito].ordem - VEREDITOS[b.veredito].ordem) || (a.ordem - b.ordem));
+    const agora = new Date();
+    res.quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    st.res.contender = res;
+    if (st.grupo === "contender") desenharContender();
+    status(res.linhas.length ? "Pronto. " + res.quando + "." : "Não achei \"" + q + "\" nas ligas do site nem como usuário do Sleeper.", !res.linhas.length);
+  } catch (e) {
+    status("Não consegui falar com o Sleeper: " + e.message + ". " + DICA_LIMITE, true);
+  } finally { btn.disabled = false; }
+}
+const linhaAlvo = a => (a.franquia ? "★ " : "") + nomeDe(a.p) + " (" + posDe(a.p).join("/") + ", " + a.p.team +
+  (a.p.injury_status && a.p.injury_status !== "Questionable" ? " · " + (NAO_CONTA[a.p.injury_status] || a.p.injury_status) : "") + ") · média " + num(a.md.m) +
+  " · do @" + a.gm + " (" + a.rec + ") · no lugar de " + a.sai;
+function textoContender(r) {
+  const L = ["*CONTENDER? — " + r.titulo.toUpperCase() + "*", ""];
+  const com = r.linhas.filter(l => l.alvos && l.alvos.length);
+  if (!com.length) L.push("Nenhuma liga com campanha positiva, 1ª e 2ª para negociar e alvo em time ruim.");
+  com.forEach(l => {
+    L.push(VEREDITOS[l.veredito].rot.split(" ")[0] + " " + l.nome + (l.time ? " · " + l.time : "") + " (" + txtCampanha(l.camp) + ") · picks " + l.picks.txt);
+    l.alvos.slice(0, 5).forEach(a => L.push("• " + linhaAlvo(a)));
+    L.push("");
+  });
+  const resto = r.linhas.length - com.length;
+  if (resto) L.push("Outras " + resto + " ligas sem alvo (campanha não positiva, redraft, sem 1ª e 2ª ou sem jogador melhor em time ruim).");
+  return L.join("\n").trim();
+}
+function desenharContender() {
+  const r = st.res.contender, box = $("resultado"); box.textContent = "";
+  if (!r) return;
+  const conta = k => r.linhas.filter(l => l.veredito === k).length;
+  const com = r.linhas.filter(l => l.alvos && l.alvos.length);
+  const fb = el("span", { class: "copied" }), bc = el("button", { class: "btn ghost", type: "button" }, "Copiar");
+  bc.addEventListener("click", () => copiar(textoContender(r), fb));
+  box.appendChild(el("div", { class: "summary" },
+    el("span", { class: "count", text: r.titulo }),
+    ...["contender", "briga", "atras", "rebuild"].filter(k => conta(k)).map(k => el("span", { class: "pill " + VEREDITOS[k].cls, text: VEREDITOS[k].rot + ": " + conta(k) })),
+    el("span", { class: "pill info", text: com.length + (com.length === 1 ? " liga com alvos" : " ligas com alvos") }),
+    el("span", { class: "foot", text: r.quando }), bc, fb));
+  box.appendChild(el("p", { class: "foot", text: "Alvos só onde a campanha é positiva e o time tem pick de 1ª e de 2ª (próximo draft ou o seguinte): jogadores de times com até " + r.opc.N +
+    (r.opc.N === 1 ? " vitória" : " vitórias") + " com média (pontuação da liga, mínimo 2 jogos) pelo menos " + r.opc.mA + " pontos acima do titular da vaga no ataque, ou " + r.opc.mD +
+    " na defesa; franchise titular só sai se sobrar acima do mínimo. ★ = da franquia do time. Veredito pela classificação geral, sem vaga garantida de divisão." }));
+  if (r.erros.length) box.appendChild(el("p", { class: "status err", text: "Não consegui ler: " + r.erros.join(", ") + " (" + r.erro + "). " + DICA_LIMITE }));
+  for (const l of com) {
+    const v = VEREDITOS[l.veredito], ul = el("ul", { class: "lst" });
+    l.alvos.slice(0, 5).forEach(a => ul.appendChild(el("li", { class: a.franquia ? "info" : "neutro" }, linhaAlvo(a))));
+    const corpo = el("div", { class: "card-b" }, ul);
+    if (l.alvos.length > 5) {
+      const mais = el("details", { class: "all" }, el("summary", { text: "mais " + (Math.min(l.alvos.length, 20) - 5) + (l.alvos.length > 20 ? " (de " + (l.alvos.length - 5) + ")" : "") }));
+      const ul2 = el("ul", { class: "lst" }); l.alvos.slice(5, 20).forEach(a => ul2.appendChild(el("li", { class: a.franquia ? "info" : "neutro" }, linhaAlvo(a))));
+      mais.appendChild(ul2); corpo.appendChild(mais);
+    }
+    if (l.erroMt) corpo.appendChild(el("div", { class: "status err", text: "Faltou ler alguma rodada (" + l.erroMt + "): médias incompletas." }));
+    box.appendChild(el("article", { class: "card" },
+      el("div", { class: "card-h" }, el("div", {}, el("h2", { text: l.nome }),
+        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + v.cls, text: v.rot }),
+          el("span", { class: "foot", text: [l.time, txtCampanha(l.camp), "picks " + l.picks.txt].filter(Boolean).join(" · ") })))),
+      corpo));
+  }
+  for (const l of r.linhas.filter(x => !(x.alvos && x.alvos.length))) {
+    const v = VEREDITOS[l.veredito];
+    const nota = !l.positivo ? "campanha não positiva" : l.redraft ? "redraft" : l.picks && !l.picks.tem ? "sem 1ª e 2ª (" + l.picks.txt + ")" : l.alvos ? "nenhum alvo em time ruim" : "";
+    box.appendChild(el("div", { class: "okrow", title: l.motivo, style: "flex-wrap:wrap" }, el("span", { text: v.rot.split(" ")[0] }), el("span", { class: "okname", text: l.nome + (l.time ? " · " + l.time : "") }),
+      el("span", { class: "foot", style: "width:100%", text: [v.rot.replace(/^\S+ /, ""), txtCampanha(l.camp), nota].filter(Boolean).join(" · ") })));
+  }
 }
 // lista das ligas franchise (marcar/desmarcar, mínimo e franquia), guardada neste aparelho
 function blocoMinhas(r) {
@@ -4188,6 +4172,8 @@ $("rodarPessoal").addEventListener("click", rodarPessoal);
 $("tankBox").addEventListener("toggle", () => { if ($("tankBox").open) carregarLigasTank(false); });
 $("rodarTank").addEventListener("click", rodarTank);
 $("rodarContender").addEventListener("click", rodarContender);
+$("cBusca").addEventListener("keydown", (e) => { if (e.key === "Enter") rodarContender(); });
+{ const b = armazenar.get("bfa-contender-busca"); $("cBusca").value = b || (pessoalLiberado() ? ($("usuarioP").value || "Apenastraja") : ""); }
 $("tankId").addEventListener("keydown", (e) => { if (e.key === "Enter") rodarTank(); });
 $("usuarioP").addEventListener("change", () => { TANK.ligas = null; if ($("tankBox").open) carregarLigasTank(true); });
 $("atualizarOf").addEventListener("click", () => carregarListaOficial(true));
