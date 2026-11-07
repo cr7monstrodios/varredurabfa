@@ -237,6 +237,8 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <label class="f">Usuário do Sleeper <input id="usuario" type="text" value="Apenastraja" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="op"><input id="meusEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana (quinta, feriado), que já travaram</span></label>
       <label class="op"><input id="meusQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
+      <label class="op"><input id="meusBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
+        <select id="meusMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="meusMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
       <div class="toolbar">
         <button id="rodarMeus" class="btn" type="button">Verificar times</button>
         <span id="statusMeus" class="status" role="status" aria-live="polite"></span>
@@ -304,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 03/11/2026 (Contender? enxuto, por franquia ou usuário)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 07/11/2026 (reservas fortes também em Meus times; cada titular e cada reserva entram uma vez)</p>
 </div>
 
 <script>
@@ -335,7 +337,7 @@ const GRUPOS = [
   { id: "hp",    nome: "Sonserina e Lufa Lufa",  nota: "Ligas de 16 times (só NFC na Sonserina, só AFC na Lufa Lufa): mínimo de 8 franchises e defesa titular em uma das 4 formações (4-3, 4-4, 3-4 ou 3-3-5). Posições do FBB (Fantasy Black Belt, o site oficial da liga) congeladas em 18/10/2026: os híbridos DE/LB, DE/DT, CB/S e LB/S valem as duas posições.", restrito: true },
   { id: "ricos", nome: "Franchise Ricos",        nota: "Liga em que o Trajano auxilia. Mínimo de 7 franchises.", restrito: true },
   { id: "oficiais", nome: "Varreduras oficiais",  nota: "Toda varredura marcada como oficial fica guardada aqui, semana por semana, com a mensagem de cada liga. Com a planilha ligada, todo comissário vê as mesmas, em qualquer aparelho, e a conferência de terça usa a daqui.", restrito: true },
-  { id: "meus",  nome: "Meus times",             nota: "Todas as ligas da temporada de um usuário do Sleeper, sem entrar uma por uma: titulares de bye, sem time, OUT, DOUB, IR, SUS, NA ou DNR e spots vazios. Usa a semana e o calendário escolhidos acima." },
+  { id: "meus",  nome: "Meus times",             nota: "Todas as ligas da temporada de um usuário do Sleeper, sem entrar uma por uma: titulares de bye, sem time, OUT, DOUB, IR, SUS, NA ou DNR, spots vazios e reservas fortes no banco. Usa a semana e o calendário escolhidos acima." },
   { id: "pessoal", nome: "Meu painel",            nota: "Só seu: revisa os seus times em todas as ligas, confere as franchises nas suas ligas franchise e aponta reservas fortes no banco.", restrito: true, pessoal: true },
   { id: "contender", nome: "Contender?",          nota: "Digite uma franquia (Bears, Giants…) para ver esse time em todas as ligas do site, ou um usuário do Sleeper para ver todas as ligas dele. Mostra a campanha e, onde ela é positiva e o time tem pick de 1ª e de 2ª, jogadores bons de times com campanha ruim que melhorariam o time.", restrito: true },
   { id: "comissario", nome: "Comissário",       nota: "", soTravado: true },
@@ -909,23 +911,30 @@ async function rodarMeus() {
     const ignoradas = ligas.filter(l => ligaIgnorada(l.name)).map(l => l.name);
     const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
     const players = await carregarJogadores(status);
-    const ctx = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked };
+    const banco = $("meusBanco").checked;
+    const ctx = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked,
+      statusDe: (id, p) => (p && p.injury_status) || null, margemAtaque: parseInt($("meusMargemA").value, 10) || 3, margemDefesa: parseInt($("meusMargemD").value, 10) || 5 };
     const { cfg } = configMinhas(ativas);
-    const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length };
+    const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
+      banco, semMedias: [], erroMedias: null };
     let feitas = 0;
-    await emLotes(ativas, 6, async (lg) => {
+    await emLotes(ativas, banco ? 5 : 6, async (lg) => {
       try {
         const comFormacao = LIGAS.some(l => l.id === lg.league_id && l.formacao);
-        const [rosters, matchups, league] = await Promise.all([getJSON("/league/" + lg.league_id + "/rosters"),
+        const c = cfg[lg.league_id];
+        const ligaSite = LIGAS.find(l => l.id === lg.league_id);
+        const ehFranq = !!ligaSite || !!(c && (c.on || c.detectada));   // liga franchise: precisa saber a franquia para não sugerir tirar franchise abaixo do mínimo
+        const minimo = c && c.on ? c.min : ligaSite ? ligaSite.min : c ? c.min : 0;
+        const [rosters, matchups, league, users] = await Promise.all([getJSON("/league/" + lg.league_id + "/rosters"),
           getJSON("/league/" + lg.league_id + "/matchups/" + semana).catch(() => []),
-          getJSON("/league/" + lg.league_id).catch(() => null)]);
+          getJSON("/league/" + lg.league_id).catch(() => null),
+          ehFranq || ligaEmpateBye(lg.name) ? getJSON("/league/" + lg.league_id + "/users").catch(() => []) : null]);
         const meu = (rosters || []).find(r => r.owner_id === u.user_id || (r.co_owners || []).includes(u.user_id));
         if (!meu) { resultado.semTime.push(lg.name); }
         else {
-          if (ligaEmpateBye(lg.name)) {   // franquia de bye nesta liga = empate: a liga sai da varredura nesta semana
-            const users = await getJSON("/league/" + lg.league_id + "/users").catch(() => []);
-            const fq = franquiaDoMeuTime(lg, league, users, rosters, meu, cfg[lg.league_id]);
-            if (fq && (st.cal[ABBR[fq]] || "normal") === "bye") { resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], nota: fq + " de bye: empate" }); return; }
+          const fq = ehFranq || ligaEmpateBye(lg.name) ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
+          if (fq && ligaEmpateBye(lg.name) && (st.cal[ABBR[fq]] || "normal") === "bye") {   // franquia de bye nesta liga = empate: a liga sai da varredura nesta semana
+            resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], nota: fq + " de bye: empate" }); return;
           }
           const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
           const titulares = m ? m.starters : (meu.starters || []);
@@ -933,6 +942,20 @@ async function rodarMeus() {
             { roster: meu, rp: league && league.roster_positions, cap: ligaCap(lg.name), temVaga: temVagaNoElenco(meu, league) });
           const fm = league && comFormacao ? avaliarFormacao(league, titulares, players) : null;
           if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm) });
+          if (banco && semana > 1) {   // reservas fortes: mesma regra do Meu painel e da varredura
+            const sig = fq && ehFranq ? ABBR[fq] : null;
+            let folga = Infinity;
+            if (sig) {
+              const v = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early"; const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
+              folga = Math.max(0, v - minimo);
+            }
+            const falhas = [];
+            const ant = await rodadasAnteriores(lg.league_id, semana - 1, falhas);
+            if (falhas.length) { resultado.semMedias.push(lg.name); resultado.erroMedias = falhas[0]; }
+            const medias = mediasDaLiga(ant.map(x => x || []));
+            const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
+            sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          }
           resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens });
         }
       } catch (e) { resultado.erros.push(lg.name); }
@@ -954,20 +977,24 @@ function textoMeus(r) {
   const linhas = ["*TIMES DE @" + r.usuario.toUpperCase() + " — SEMANA " + r.semana + "*", ""];
   if (!com.length) linhas.push("✅ Nenhum problema nas escalações.");
   com.forEach(l => linhas.push("• " + l.nome + ": " + juntar(problemas(l).map(i => i.txt))));
+  if (r.semMedias && r.semMedias.length) linhas.push("⚠️ Reservas fortes de fora em: " + r.semMedias.join(", ") + ".");
   linhas.push("", "Verificado em " + r.quando + " (" + r.ligas.length + " ligas)");
   return linhas.join("\n");
 }
 function desenharMeus(r) {
   const box = $("resultado"); box.textContent = "";
-  const com = r.ligas.filter(l => problemas(l).length);
+  const com = r.ligas.filter(l => problemas(l).some(i => !i.banco));   // reserva forte não é problema de escalação: tem contagem própria
   const fb = el("span", { class: "copied" });
   const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar lista");
   bc.addEventListener("click", () => copiar(textoMeus(r), fb));
   box.appendChild(el("div", { class: "summary" },
     el("span", { class: "count", text: "@" + r.usuario }),
     el("span", { class: "pill " + (com.length ? "wo" : "ok"), text: com.length + " de " + r.ligas.length + " ligas com problema" }),
+    r.banco ? el("span", { class: "pill warn", text: "🔍 " + r.ligas.filter(l => l.itens.some(i => i.banco)).length + " com reserva forte no banco" }) : null,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
+  if (r.semMedias && r.semMedias.length) box.appendChild(el("p", { class: "status err", text: "As reservas fortes ficaram de fora em " + r.semMedias.length + (r.semMedias.length > 1 ? " ligas" : " liga") +
+    " porque não consegui ler as rodadas anteriores (" + r.erroMedias + "): " + r.semMedias.join(", ") + ". " + DICA_LIMITE }));
   const avisos = [];
   if (r.foraTemporada) avisos.push(r.foraTemporada + (r.foraTemporada > 1 ? " ligas fora da temporada (sem draft ou encerradas) não foram verificadas." : " liga fora da temporada (sem draft ou encerrada) não foi verificada."));
   if (r.semTime.length) avisos.push("Sem time do usuário em: " + r.semTime.join(", ") + ".");
@@ -981,8 +1008,8 @@ function desenharMeus(r) {
   filtroBox.appendChild(cb); filtroBox.appendChild(el("span", { text: "Mostrar só as ligas com problema" }));
   box.appendChild(filtroBox);
   for (const l of r.ligas) {
-    const np = problemas(l).length;
-    if (!l.itens.length || (soProblema && !np)) {
+    const np = problemas(l).filter(i => !i.banco).length, nb = l.itens.filter(i => i.banco).length;
+    if (!l.itens.length || (soProblema && !np && !nb)) {
       if (!soProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: l.nota || "sem problema" })));
       continue;
     }
@@ -994,7 +1021,8 @@ function desenharMeus(r) {
     });
     box.appendChild(el("article", { class: "card" },
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: l.nome }),
-        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + (np ? "wo" : "ok"), text: np ? np + (np > 1 ? " problemas" : " problema") : "sem problema" })))),
+        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + (np ? "wo" : "ok"), text: np ? np + (np > 1 ? " problemas" : " problema") : "sem problema" }),
+          nb ? el("span", { class: "pill warn", text: "🔍 " + nb + (nb > 1 ? " reservas fortes" : " reserva forte") }) : null))),
       el("div", { class: "card-b" }, ul)));
   }
 }
@@ -2181,6 +2209,8 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     const s = ctx.statusDe(id, p); if (s && s !== "Questionable") return false;
     return medias[id] != null;
   });
+  // todas as trocas possíveis (cada titular com cada reserva que serve e ganha a diferença mínima); depois casa pelo maior ganho,
+  // um reserva por vaga e uma vaga por reserva, para que um reserva forte usado numa vaga não esconda a melhor opção da outra
   const pares = [];
   for (let i = 0; i < titulares.length; i++) {
     const sId = titulares[i];
@@ -2189,24 +2219,23 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     const pS = ctx.players[sId]; if (!pS || !pS.team || !noEscopo(pS) || medias[sId] == null) continue;
     if ((ctx.cal[pS.team] || "normal") === "bye") continue;
     const sS = ctx.statusDe(sId, pS); if (sS && sS !== "Questionable") continue;
-    let melhor = null; const margem = margemDe(slot, pS);
+    const margem = margemDe(slot, pS);
     for (const bId of aptos) {
       const pB = ctx.players[bId];
       if (pS.team === sig && pB.team !== sig && !(folga > 0)) continue;   // só tira franchise se estiver acima do mínimo
       const cabe = slot ? cabeNoSlot(pB, slot) : mesmaPosicao(pB, pS);
-      if (cabe && medias[bId] >= medias[sId] + margem && (!melhor || medias[bId] > medias[melhor])) melhor = bId;
+      if (cabe && medias[bId] >= medias[sId] + margem) pares.push({ b: bId, s: sId, dif: medias[bId] - medias[sId] });
     }
-    if (melhor) pares.push({ b: melhor, s: sId, dif: medias[melhor] - medias[sId] });
   }
   pares.sort((a, b) => b.dif - a.dif);
-  const usados = new Set(), out = []; let tirados = 0;
+  const usados = new Set(), usadosS = new Set(), out = []; let tirados = 0;
   for (const x of pares) {
-    if (usados.has(x.b) || out.length >= 3) continue;
+    if (usados.has(x.b) || usadosS.has(x.s) || out.length >= 3) continue;
     const pB = ctx.players[x.b], pS = ctx.players[x.s];
     const tiraFranchise = pS.team === sig && pB.team !== sig;
     if (tiraFranchise && tirados >= folga) continue;
     if (tiraFranchise) tirados++;
-    usados.add(x.b);
+    usados.add(x.b); usadosS.add(x.s);
     out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b],
       txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", MÉDIA " + num(medias[x.b]) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + ")" });
   }
