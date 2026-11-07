@@ -306,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 07/11/2026 (reservas fortes também em Meus times; cada titular e cada reserva entram uma vez)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 07/11/2026 b (Meus times: franchises escalados, campanha e reservas fortes)</p>
 </div>
 
 <script>
@@ -933,8 +933,10 @@ async function rodarMeus() {
         if (!meu) { resultado.semTime.push(lg.name); }
         else {
           const fq = ehFranq || ligaEmpateBye(lg.name) ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
+          const camp = campanhaDe(rosters, meu);
+          const ehFr = !!(c && c.on);   // confere o mínimo (liga do site, lista do Trajano ou marcada no Meu painel); nas outras franchise só mostra a conta
           if (fq && ligaEmpateBye(lg.name) && (st.cal[ABBR[fq]] || "normal") === "bye") {   // franquia de bye nesta liga = empate: a liga sai da varredura nesta semana
-            resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], nota: fq + " de bye: empate" }); return;
+            resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], nota: fq + " de bye: empate", fr: { franquia: fq, bye: true, empate: true }, camp }); return;
           }
           const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
           const titulares = m ? m.starters : (meu.starters || []);
@@ -942,6 +944,21 @@ async function rodarMeus() {
             { roster: meu, rp: league && league.roster_positions, cap: ligaCap(lg.name), temVaga: temVagaNoElenco(meu, league) });
           const fm = league && comFormacao ? avaliarFormacao(league, titulares, players) : null;
           if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm) });
+          let fr = null;
+          if (fq && ehFranq) {   // franchises escalados (mesma conta do Meu painel)
+            const sigF = ABBR[fq];
+            // quem está OUT/IR/... já aparece na linha própria (com as opções do banco); aqui vai só a conta
+            const validos = titulares.filter(id => {
+              const p = players[id]; if (!p || p.team !== sigF) return false;
+              const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early";
+              const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable";
+            }).length;
+            const bye = (st.cal[sigF] || "normal") === "bye";
+            if (ehFr) {
+              fr = { franquia: fq, validos, min: c.min, bye };
+              if (!bye && validos < c.min) itens.unshift({ txt: "FRANCHISES (" + fq + "): " + validos + " DE " + c.min, tipo: "wo", abaixo: true });
+            } else fr = { franquia: fq, validos, min: null, bye, info: true };
+          } else if (ehFr && !fq) itens.unshift({ txt: "NÃO IDENTIFIQUEI A FRANQUIA DO TIME NESTA LIGA (DÁ PARA ESCOLHER EM \"MINHAS LIGAS FRANCHISE\", NO MEU PAINEL)", tipo: "warn" });
           if (banco && semana > 1) {   // reservas fortes: mesma regra do Meu painel e da varredura
             const sig = fq && ehFranq ? ABBR[fq] : null;
             let folga = Infinity;
@@ -956,7 +973,7 @@ async function rodarMeus() {
             const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
             sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
-          resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens });
+          resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, camp });
         }
       } catch (e) { resultado.erros.push(lg.name); }
       feitas++; status("Lendo ligas… " + feitas + "/" + ativas.length);
@@ -981,6 +998,11 @@ function textoMeus(r) {
   linhas.push("", "Verificado em " + r.quando + " (" + r.ligas.length + " ligas)");
   return linhas.join("\n");
 }
+// "campanha 5-3 (4º) · franchise: Rams · 7 de 7" (Meus times e Meu painel)
+function textoFranquiaLiga(l) {
+  return [l.camp ? "campanha " + txtCampanha(l.camp) : "",
+    l.fr ? "franchise: " + l.fr.franquia + (l.fr.empate ? " de bye: empate" : l.fr.bye ? " (bye, isenta)" : l.fr.min ? " · " + l.fr.validos + " de " + l.fr.min : " · " + l.fr.validos + (l.fr.validos === 1 ? " escalado" : " escalados")) : ""].filter(Boolean).join(" · ");
+}
 function desenharMeus(r) {
   const box = $("resultado"); box.textContent = "";
   const com = r.ligas.filter(l => problemas(l).some(i => !i.banco));   // reserva forte não é problema de escalação: tem contagem própria
@@ -990,6 +1012,7 @@ function desenharMeus(r) {
   box.appendChild(el("div", { class: "summary" },
     el("span", { class: "count", text: "@" + r.usuario }),
     el("span", { class: "pill " + (com.length ? "wo" : "ok"), text: com.length + " de " + r.ligas.length + " ligas com problema" }),
+    r.ligas.some(l => l.fr && l.fr.min) ? el("span", { class: "pill " + (r.ligas.some(l => l.itens.some(i => i.abaixo)) ? "wo" : "ok"), text: r.ligas.filter(l => l.itens.some(i => i.abaixo)).length + " abaixo do mínimo de franchises" }) : null,
     r.banco ? el("span", { class: "pill warn", text: "🔍 " + r.ligas.filter(l => l.itens.some(i => i.banco)).length + " com reserva forte no banco" }) : null,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
@@ -1009,8 +1032,9 @@ function desenharMeus(r) {
   box.appendChild(filtroBox);
   for (const l of r.ligas) {
     const np = problemas(l).filter(i => !i.banco).length, nb = l.itens.filter(i => i.banco).length;
+    const frTxt = textoFranquiaLiga(l);
     if (!l.itens.length || (soProblema && !np && !nb)) {
-      if (!soProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: l.nota || "sem problema" })));
+      if (!soProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || l.nota || "sem problema" })));
       continue;
     }
     const ul = el("ul", { class: "lst" });
@@ -1022,7 +1046,8 @@ function desenharMeus(r) {
     box.appendChild(el("article", { class: "card" },
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: l.nome }),
         el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + (np ? "wo" : "ok"), text: np ? np + (np > 1 ? " problemas" : " problema") : "sem problema" }),
-          nb ? el("span", { class: "pill warn", text: "🔍 " + nb + (nb > 1 ? " reservas fortes" : " reserva forte") }) : null))),
+          nb ? el("span", { class: "pill warn", text: "🔍 " + nb + (nb > 1 ? " reservas fortes" : " reserva forte") }) : null,
+          frTxt ? el("span", { class: "foot", text: frTxt }) : null))),
       el("div", { class: "card-b" }, ul)));
   }
 }
@@ -1271,8 +1296,7 @@ function desenharPessoal(r) {
   filtroBox.appendChild(cb); filtroBox.appendChild(el("span", { text: "Mostrar só as ligas com problema" }));
   box.appendChild(filtroBox);
   for (const l of r.ligas) {
-    const frTxt = [l.camp ? "campanha " + txtCampanha(l.camp) : "",
-      l.fr ? "franchise: " + l.fr.franquia + (l.fr.empate ? " de bye: empate" : l.fr.bye ? " (bye, isenta)" : l.fr.min ? " · " + l.fr.validos + " de " + l.fr.min : " · " + l.fr.validos + (l.fr.validos === 1 ? " escalado" : " escalados")) : ""].filter(Boolean).join(" · ");
+    const frTxt = textoFranquiaLiga(l);
     const np = problemas(l).length, its = itensComWaiver(l, r);
     if (!its.length || (st.pessoalSoProblema && !np)) {
       if (!st.pessoalSoProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || "sem problema" })));
