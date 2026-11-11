@@ -306,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 d (W.O. e escalação irregular numerados pelo Registro)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 e (numeração com a regra da troca de GM)</p>
 </div>
 
 <script>
@@ -3722,7 +3722,8 @@ function textoDefesas(res) {
 }
 
 // ---------------------------------------------------------------- terça: numeração de W.O. e EI
-// Histórico do Registro da planilha (semana, liga, time, tipo; sem os anulados). Linha sem semana = migrada da planilha antiga, conta como anterior.
+// Histórico do Registro da planilha (semana, liga, time, tipo e, se for o caso, "GM trocado"; sem os anulados). Linha sem semana = migrada da planilha antiga, conta como anterior.
+// Troca de GM (regra): as escalações irregulares do GM anterior deixam de valer e os W.O. dele contam como 1 só.
 // REGISTRO_INICIO
 const REGISTRO_WO_EI = { em: "11/11/2026", linhas: [
   [null, "BFA Franchise", "Buccaneers", "WO"],
@@ -3758,7 +3759,9 @@ const normReg = x => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
 // número desta ocorrência (1, 2, 3...) para o time na liga, contando as do Registro de semanas anteriores (ou sem semana)
 function numeroOcorrencia(ligaNome, time, tipo, semana) {
   const L = normReg(ligaNome), T = normReg(time), K = normReg(tipo);
-  return REGISTRO_WO_EI.linhas.filter(r => normReg(r[1]) === L && normReg(r[2]) === T && normReg(r[3]) === K && (r[0] == null || r[0] < semana)).length + 1;
+  const ant = REGISTRO_WO_EI.linhas.filter(r => normReg(r[1]) === L && normReg(r[2]) === T && normReg(r[3]) === K && (r[0] == null || r[0] < semana));
+  const doAnterior = ant.filter(r => r[4] === "GM trocado").length;
+  return ant.length - doAnterior + (K === "wo" ? Math.min(1, doAnterior) : 0) + 1;
 }
 // Regra 4 (escada de W.O.), a mesma da coluna "Regra 4" do Registro
 const ESCADA_WO = ["DERROTA DA PARTIDA", "PERDE A ESCOLHA DA 3ª RODADA", "PERDE A ESCOLHA DA 2ª RODADA", "PERDE A ESCOLHA DA 1ª RODADA", "EXCLUSÃO DA LIGA"];
@@ -3988,7 +3991,7 @@ function desenharTerca(resultados, ctx) {
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
   if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
   if (resultados.some(r => r.liga.grupo === "bfa")) box.appendChild(el("p", { class: "foot", text: "Numeração de W.O. e escalação irregular (por time na liga): pelo Registro da planilha" +
-    (REGISTRO_WO_EI.em ? " como estava em " + REGISTRO_WO_EI.em : "") + ", mais a ocorrência desta semana. Anulados não contam." }));
+    (REGISTRO_WO_EI.em ? " como estava em " + REGISTRO_WO_EI.em : "") + ", mais a ocorrência desta semana. Anulados não contam; com GM trocado, as escalações irregulares do GM anterior não contam e os W.O. dele contam como 1." }));
   const trocEsc = (ctx.trocados || []).filter(x => resultados.some(r => r.times.some(t => (t.titulares || []).includes(x.id))));
   if (trocEsc.length) box.appendChild(el("p", { class: "foot", text: "Trocados depois da rodada (contam pelo time em que jogaram a semana " + ctx.semana + "): " +
     trocEsc.map(x => x.nome + " pelo " + x.naRodada + " (hoje " + x.hoje + ")").join(", ") + "." }));
