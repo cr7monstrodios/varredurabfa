@@ -306,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 b (escalação irregular: sem QB é grave; reserva só conta se pontuou; só com opção no banco)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 c (escalação irregular: sem QB é grave; reserva só conta se pontuou; franchise que daria W.O. só com franchise no banco)</p>
 </div>
 
 <script>
@@ -3743,6 +3743,7 @@ function avaliarTerca(liga, dados, ctx) {
     // Para análise de escalação irregular (regras dos comissários):
     // 1) jogar sem QB é delito grave (posição premium);
     // 2) reserva forte que ficou no banco só conta se pontuou perto da média usada na varredura (80% ou mais);
+    //    se o titular mais fraco era franchise e tirar daria W.O., não conta, a não ser que houvesse um franchise melhor no banco;
     // 3) titular que não jogou (vazio, sem time, bye, OUT/IR/SUS... na varredura) só conta se havia opção no banco para a vaga;
     //    titular que jogou e era "pior" só conta se o reserva fez mais pontos que ele.
     const alertas = [], descartados = [];
@@ -3798,15 +3799,25 @@ function avaliarTerca(liga, dados, ctx) {
       // sem os pontos da rodada no Sleeper não dá para conferir: fica o alerta, avisando
       if (!temPontos) { reservaForte = true; alertas.push("RESERVA FORTE APONTADO NA VARREDURA FICOU NO BANCO: " + quem + " (MÉDIA " + num(x.media || 0) + "; SEM OS PONTOS DA RODADA NO SLEEPER PARA CONFERIR)"); return; }
       if (!x.media || feitos < PERTO_DA_MEDIA * x.media) { descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", LONGE DA MÉDIA " + num(x.media || 0)); return; }
-      // o titular que ele substituiria: o apontado na varredura; se não houver, o que menos pontuou numa vaga em que ele cabe
-      let tId = x.tit && titulares.includes(x.tit) ? x.tit : null;
-      if (!tId && pB) tId = (titulares.map((id, i) => ({ id, i })).filter(o => o.id && o.id !== "0" && ctx.players[o.id] && (rp[o.i] ? cabeNoSlot(pB, rp[o.i]) : mesmaPosicao(pB, ctx.players[o.id])))
-        .sort((a, b) => (pts(a.id) || 0) - (pts(b.id) || 0))[0] || {}).id || null;
-      if (!tId) return;
+      // o titular que ele substituiria: o apontado na varredura; se não houver (varredura antiga), o que menos pontuou numa vaga em que ele cabe e podia sair.
+      // Franchise que, se saísse, deixaria o time abaixo do mínimo (W.O.) não podia sair, a não ser trocado por outro franchise do banco.
+      const franqB = !!(pB && pB.team === sig);
+      const podiaSair = id => { const p = ctx.players[id]; if (!p || p.team !== sig || franqB) return true;
+        const s = ctx.statusDe(id, p); const conta = !s || s === "Questionable"; return !conta || validos - 1 >= liga.min; };
+      const naVaga = pB ? titulares.map((id, i) => ({ id, i })).filter(o => o.id && o.id !== "0" && ctx.players[o.id] && (rp[o.i] ? cabeNoSlot(pB, rp[o.i]) : mesmaPosicao(pB, ctx.players[o.id])))
+        .sort((a, b) => (pts(a.id) || 0) - (pts(b.id) || 0)).map(o => o.id) : [];
+      const cand = x.tit && titulares.includes(x.tit) ? [x.tit] : naVaga;   // com o titular da varredura guardado, compara só com ele
+      const tId = cand.find(podiaSair) || null;
+      if (!tId) {
+        if (cand.length) descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", MAS O TITULAR " + nomePosTime(ctx.players[cand[0]]) + " É FRANCHISE E TIRAR DARIA W.O.");
+        return;
+      }
       const pT = ctx.players[tId], fT = pts(tId) || 0;
       if (feitos <= fT) { descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", NÃO MAIS QUE O TITULAR " + nomePosTime(pT) + " (" + num(fT) + ")"); return; }
+      const entreFranchises = franqB && pT && pT.team === sig;
       reservaForte = true;
-      alertas.push("RESERVA FORTE FICOU NO BANCO: " + quem + " FEZ " + num(feitos) + " (MÉDIA " + num(x.media) + ") > TITULAR " + nomePosTime(pT) + " FEZ " + num(fT));
+      alertas.push("RESERVA FORTE FICOU NO BANCO: " + (franqB ? "FRANCHISE " : "") + quem + " FEZ " + num(feitos) + " (MÉDIA " + num(x.media) + ") > TITULAR " + (pT && pT.team === sig ? "FRANCHISE " : "") + nomePosTime(pT) + " FEZ " + num(fT) +
+        (entreFranchises ? " (TROCA ENTRE FRANCHISES, SEM RISCO DE W.O.)" : ""));
     });
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
     if (formacao && !formacao.ok) alertas.push(descFormacao(formacao));
