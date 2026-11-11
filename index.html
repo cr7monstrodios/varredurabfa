@@ -306,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 07/11/2026 b (Meus times: franchises escalados, campanha e reservas fortes)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 (waiver sem QB e K; posição e time de todos os recomendados)</p>
 </div>
 
 <script>
@@ -864,7 +864,7 @@ function problemasDoTime(titulares, ctx, extra) {
     if (!id || id === "0") {
       if (!roster) return;
       const lv = livresPara(slot);
-      if (lv.length) { itens.push({ txt: "SPOT VAZIO (" + rot + ") · NO BANCO: " + juntar(lv.slice(0, 2).map(nomeDe)), tipo: "wo", corrige: true }); return; }
+      if (lv.length) { itens.push({ txt: "SPOT VAZIO (" + rot + ") · NO BANCO: " + juntar(lv.slice(0, 2).map(nomePosTime)), tipo: "wo", corrige: true }); return; }
       const byes = banco.filter(p => cabeNoSlot(p, slot) && est(p) === "bye");
       itens.push({ txt: "SPOT VAZIO (" + rot + ")" + (byes.length ? ": " + juntar(byes.slice(0, 2).map(nomeDe)) + " DE BYE" : "") + semOpcao(), tipo: "warn" });
       return;
@@ -884,7 +884,8 @@ function problemasDoTime(titulares, ctx, extra) {
     }
     if (!roster) { itens.push({ txt: nomeJ + motivo, pos, tipo: "wo" }); return; }
     const lv = livresPara(slot);
-    if (lv.length) itens.push({ txt: nomeJ + motivo + " · NO BANCO: " + juntar(lv.slice(0, 2).map(nomeDe)), pos, tipo: "wo", corrige: true });
+    // com opção no banco, a posição e o time do titular vão junto do nome dele (no fim ficariam parecendo ser do reserva)
+    if (lv.length) itens.push({ txt: nomePosTime(p) + motivo + " · NO BANCO: " + juntar(lv.slice(0, 2).map(nomePosTime)), tipo: "wo", corrige: true });
     else itens.push({ txt: nomeJ + motivo + semOpcao(), pos, tipo: "warn" });
   });
   return itens;
@@ -1276,7 +1277,7 @@ function desenharPessoal(r) {
     r.waiver ? el("span", { class: "pill info", text: "💡 " + comWaiver + " com dica de waiver" }) : null, selW,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb,
     st.res.tank ? (() => { const b = el("button", { class: "btn ghost", type: "button" }, "Ver caça ao tank"); b.addEventListener("click", () => { st.vistaPessoal = "tank"; redesenhar(); }); return b; })() : null));
-  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga; nas ligas de cap só aparece se o seu elenco tiver vaga): " +
+  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga, sem QB, K e DEF; nas ligas de cap só aparece se o seu elenco tiver vaga): " +
     { semana: "os 3 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
       snap: "livres com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo 15 pontos ou mais nas semanas " + r.waiver.semanas.join(", ") + ", pela média desses jogos." }[modoWaiver()] }));
   if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "A waiver ficou de fora: não consegui ler as estatísticas (" + r.waiver.erro + "). " + DICA_LIMITE }));
@@ -1441,7 +1442,9 @@ async function rodarTank() {
             .sort((a, b) => (pp[b] || 0) - (pp[a] || 0));
           const quem = vazio ? "SPOT VAZIO (" + (SLOT_NOME[slot] || slot) + ")" : nomeDe(p) + (bye ? " ESTAVA DE BYE" : " NÃO JOGOU");
           const pos = p ? [p.position, p.team].filter(Boolean).join(" · ") : "";
-          if (opc.length) { usados.add(opc[0]); t.antes.push({ w, txt: "S" + w + ": " + quem + " · NO BANCO JOGOU " + nomeDe(players[opc[0]]) + " (" + num(pp[opc[0]] || 0) + " PTS)", pos, tipo: "wo", forte: true }); }
+          // com opção no banco, a posição e o time do titular vão junto do nome dele (no fim ficariam parecendo ser do reserva)
+          const quemPT = vazio ? quem : nomePosTime(p) + (bye ? " ESTAVA DE BYE" : " NÃO JOGOU");
+          if (opc.length) { usados.add(opc[0]); t.antes.push({ w, txt: "S" + w + ": " + quemPT + " · NO BANCO JOGOU " + nomePosTime(players[opc[0]]) + " · " + num(pp[opc[0]] || 0) + " PTS", tipo: "wo", forte: true }); }
           else if (vazio) t.antes.push({ w, txt: "S" + w + ": " + quem + " · SEM OPÇÃO NO BANCO", tipo: "warn" });
           else if (semJogoAntes.has(sid)) t.antes.push({ w, txt: "S" + w + ": " + nomeDe(p) + " FICOU SEM JOGAR DE NOVO E SEGUIU TITULAR · SEM OPÇÃO NO BANCO", pos, tipo: "warn" });
         });
@@ -2103,6 +2106,8 @@ const ehQbOuK = p => { const f = posDe(p); return f.includes("QB") || f.includes
 // liga franchise: as que estão no site ou com "7F", "6F", "(7)"... no nome
 const ehLigaFranchise = lg => LIGAS.some(l => l.id === lg.league_id) || /\b\d\s*f\b|\(\d\)/.test(norm(lg.name));
 const nomeDe = p => (((p && p.first_name) || "") + " " + ((p && p.last_name) || "")).trim().toUpperCase();
+// jogador recomendado: nome com posição e time ("MALIK NABERS (WR, NYG)")
+const nomePosTime = p => nomeDe(p) + " (" + [posDe(p).join("/") || (p && p.position) || "", (p && p.team) || "SEM TIME"].filter(Boolean).join(", ") + ")";
 const posDe = p => { const f = (p && p.fantasy_positions) || []; return f.length ? f : (p && p.position ? [p.position] : []); };
 const mesmaPosicao = (a, b) => { const B = posDe(b); return posDe(a).some(x => B.includes(x)); };
 const num = x => (Math.round(x * 10) / 10).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -2149,7 +2154,7 @@ async function candidatosWaiver(temporada, semana, players, limiar) {
   for (const id of ids) {
     const p = players[id]; if (!p || !p.team) continue;
     if (p.injury_status && p.injury_status !== "Questionable") continue;
-    const pos = posDe(p); if (!pos.length || pos.includes("K") || pos.includes("DEF")) continue;
+    const pos = posDe(p); if (!pos.length || pos.includes("QB") || pos.includes("K") || pos.includes("DEF")) continue;   // sem QB, K e DEF
     const idp = ehIdp(p), jogos = [];
     S.forEach((x, i) => {
       const v = x && x[id]; if (!v) return;
@@ -2164,7 +2169,7 @@ async function candidatosWaiver(temporada, semana, players, limiar) {
   }
   return { semanas, lista };
 }
-// livres na liga (sem dono, aptos, que cabem numa vaga titular dela); sem K e DEF
+// livres na liga (sem dono, aptos, que cabem numa vaga titular dela); sem QB, K e DEF
 function livresDaLiga(league, rosters, players) {
   const rp = (league.roster_positions || []).filter(x => SLOT_ELEG[x]);
   const ocupados = new Set();
@@ -2172,7 +2177,7 @@ function livresDaLiga(league, rosters, players) {
   return id => {
     const p = players[id]; if (!p || !p.team || ocupados.has(id)) return null;
     if (p.injury_status && p.injury_status !== "Questionable") return null;
-    const pos = posDe(p); if (!pos.length || pos.includes("K") || pos.includes("DEF")) return null;
+    const pos = posDe(p); if (!pos.length || pos.includes("QB") || pos.includes("K") || pos.includes("DEF")) return null;
     return rp.some(sl => cabeNoSlot(p, sl)) ? p : null;
   };
 }
@@ -2181,7 +2186,7 @@ function livresDaLiga(league, rosters, players) {
 function opcoesWaiver(base, league, rosters, players, max = 3) {
   if (!league) return null;
   const livre = livresDaLiga(league, rosters, players), sc = league.scoring_settings || {};
-  const top = arr => arr.sort((a, b) => b.valor - a.valor).slice(0, max).map(x => ({ nome: nomeDe(x.p), valor: x.valor, jogos: x.jogos }));
+  const top = arr => arr.sort((a, b) => b.valor - a.valor).slice(0, max).map(x => ({ nome: nomePosTime(x.p), valor: x.valor, jogos: x.jogos }));
   const snap = [];
   for (const c of (base.cand ? base.cand.lista : [])) {
     const p = livre(c.id); if (!p) continue;
@@ -2206,7 +2211,7 @@ function linhaWaiver(l, r) {
   const m = modoWaiver(), lst = l.waiver && l.waiver[m];
   if (!lst || !lst.length) return null;
   const rot = m === "semana" ? "ÚLTIMA SEMANA" + (r.waiver && r.waiver.ultima ? " (S" + r.waiver.ultima + ")" : "") : m === "temporada" ? "TEMPORADA" : "SNAP SUBINDO";
-  return { tipo: "neutro", info: true, waiver: true, txt: "💡 WAIVER · " + rot + ": " + lst.map(x => x.nome + " " + num(x.valor) + (m === "temporada" ? " (" + x.jogos + " J)" : "")).join(" · ") };
+  return { tipo: "neutro", info: true, waiver: true, txt: "💡 WAIVER · " + rot + ": " + lst.map(x => x.nome + " " + num(x.valor) + (m === "temporada" ? " em " + x.jogos + " J" : "")).join(" · ") };
 }
 const itensComWaiver = (l, r) => { const w = linhaWaiver(l, r); return w ? l.itens.concat([w]) : l.itens; };
 function bancoDoTime(r, titulares) {
@@ -2261,7 +2266,7 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     if (tiraFranchise) tirados++;
     usados.add(x.b); usadosS.add(x.s);
     out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b],
-      txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", MÉDIA " + num(medias[x.b]) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + ")" });
+      txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", " + pB.team + ", MÉDIA " + num(medias[x.b]) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + ")" });
   }
   return out;
 }
