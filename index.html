@@ -306,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 (waiver sem QB e K; posição e time de todos os recomendados)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 b (escalação irregular: sem QB é grave; reserva só conta se pontuou; só com opção no banco)</p>
 </div>
 
 <script>
@@ -2265,7 +2265,7 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     if (tiraFranchise && tirados >= folga) continue;
     if (tiraFranchise) tirados++;
     usados.add(x.b); usadosS.add(x.s);
-    out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b],
+    out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b], tit: x.s,
       txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", " + pB.team + ", MÉDIA " + num(medias[x.b]) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + ")" });
   }
   return out;
@@ -3722,6 +3722,7 @@ function textoDefesas(res) {
 }
 
 // ---------------------------------------------------------------- terça: conferência de W.O.
+const PERTO_DA_MEDIA = 0.8;   // reserva forte que ficou no banco só conta se fez pelo menos 80% da média usada na varredura
 function avaliarTerca(liga, dados, ctx) {
   const { league, users, rosters, matchups } = dados;
   const { fr, avisos, byUser } = mapearFranquias(liga, league, users, rosters);
@@ -3739,27 +3740,78 @@ function avaliarTerca(liga, dados, ctx) {
     });
     const validos = daFranquia.filter(j => j.conta).length;
     const wo = !bye && validos < liga.min;
-    const alertas = [];
-    const vazios = titulares.filter(id => !id || id === "0").length;
-    if (vazios) alertas.push(vazios + (vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO"));
-    for (const id of titulares) {
-      if (!id || id === "0") continue;
-      const p = ctx.players[id]; if (!p) continue;
+    // Para análise de escalação irregular (regras dos comissários):
+    // 1) jogar sem QB é delito grave (posição premium);
+    // 2) reserva forte que ficou no banco só conta se pontuou perto da média usada na varredura (80% ou mais);
+    // 3) titular que não jogou (vazio, sem time, bye, OUT/IR/SUS... na varredura) só conta se havia opção no banco para a vaga;
+    //    titular que jogou e era "pior" só conta se o reserva fez mais pontos que ele.
+    const alertas = [], descartados = [];
+    const rp = (league && league.roster_positions) || [];
+    const pts = id => { const v = (m.players_points || {})[id]; return v == null ? null : v; };
+    const foraBanco = new Set([...titulares, ...(r.reserve || []), ...(r.taxi || [])]);
+    const banco = [...new Set(m.players || r.players || [])].filter(id => id && id !== "0" && !foraBanco.has(id));
+    const aptoBanco = id => { const p = ctx.players[id]; if (!p || !p.team || (ctx.cal[p.team] || "normal") === "bye") return false; const s = ctx.statusDe(id, p); return !s || s === "Questionable"; };
+    const usadosB = new Set();
+    const opcoesPara = (slot, pT) => banco.filter(b => !usadosB.has(b) && aptoBanco(b) && (slot ? cabeNoSlot(ctx.players[b], slot) : !pT || mesmaPosicao(ctx.players[b], pT)))
+      .sort((a, b) => (pts(b) || 0) - (pts(a) || 0));
+    const txtOp = ids => juntar(ids.slice(0, 2).map(b => nomePosTime(ctx.players[b]) + (pts(b) != null ? " FEZ " + num(pts(b)) : "")));
+    const ehQB = p => posDe(p).includes("QB");
+    const jogaria = (id, p) => { if (!p || !p.team || (ctx.cal[p.team] || "normal") === "bye") return false; const s = ctx.statusDe(id, p); return !s || s === "Questionable"; };
+    // titulares que não jogaram
+    const naoJogou = [];
+    titulares.forEach((id, i) => {
+      const slot = rp[i];
+      if (!id || id === "0") { naoJogou.push({ i, slot, txt: "SPOT VAZIO" + (slot ? " (" + (SLOT_NOME[slot] || slot) + ")" : "") }); return; }
+      const p = ctx.players[id]; if (!p) return;
       const est = p.team ? (ctx.cal[p.team] || "normal") : "semtime";
-      if (est === "semtime") { alertas.push("TITULAR " + nomeDe(p) + " ESTAVA SEM TIME"); continue; }
-      if (est === "bye") { if (!(rosters.length >= 32 && ehQbOuK(p))) alertas.push("TITULAR " + nomeDe(p) + " ESTAVA DE BYE"); continue; }
+      if (est === "semtime") { naoJogou.push({ i, slot, id, p, txt: "TITULAR " + nomePosTime(p) + " ESTAVA SEM TIME" }); return; }
+      if (est === "bye") { naoJogou.push({ i, slot, id, p, txt: "TITULAR " + nomePosTime(p) + " ESTAVA DE BYE", isento: rosters.length >= 32 && ehQbOuK(p) }); return; }
       const s = ctx.statusDe(id, p);
-      if (s && s !== "Questionable" && !(wo && p.team === sig)) alertas.push((p.team === sig ? "FRANCHISE " : "TITULAR ") + nomeDe(p) + " ESTAVA " + (NAO_CONTA[s] || String(s).toUpperCase()) + " NA VARREDURA");
+      if (s && s !== "Questionable" && !(wo && p.team === sig))
+        naoJogou.push({ i, slot, id, p, txt: (p.team === sig ? "FRANCHISE " : "TITULAR ") + nomePosTime(p) + " ESTAVA " + (NAO_CONTA[s] || String(s).toUpperCase()) + " NA VARREDURA" });
+    });
+    // 1) sem QB: nenhum QB titular jogou numa liga que tem vaga de QB (grave mesmo sem QB no banco e mesmo de bye em liga de 32)
+    let grave = false;
+    if (rp.slice(0, titulares.length).includes("QB") && !titulares.some(id => id && id !== "0" && ctx.players[id] && ehQB(ctx.players[id]) && jogaria(id, ctx.players[id]))) {
+      grave = true;
+      const naVaga = naoJogou.filter(x => x.slot === "QB");
+      naVaga.forEach(x => { x.feito = true; });
+      const ops = opcoesPara("QB"); if (ops.length) usadosB.add(ops[0]);
+      alertas.push("🚨 JOGOU SEM QB (POSIÇÃO PREMIUM, DELITO GRAVE): " + (naVaga.length ? juntar(naVaga.map(x => x.txt)) : "NENHUM QB TITULAR JOGOU") +
+        (ops.length ? " · NO BANCO: " + txtOp(ops) : " · SEM QB NO BANCO"));
     }
-    // reservas fortes apontados na varredura oficial que continuaram no banco
+    // 3) quem não jogou: só conta com opção no banco para a vaga
+    naoJogou.filter(x => !x.feito && !x.isento).forEach(x => {
+      const ops = opcoesPara(x.slot, x.p);
+      if (ops.length) { usadosB.add(ops[0]); alertas.push(x.txt + " · NO BANCO: " + txtOp(ops)); }
+      else descartados.push(x.txt + " · SEM OPÇÃO NO BANCO");
+    });
+    // 2) e 3) reservas fortes apontados na varredura oficial que continuaram no banco
     const doElenco = new Set([...(m.players || r.players || [])]);
     const marcados = ((ctx.reservas || {})[liga.id] || {})[f] || [];
     const ficaram = marcados.filter(x => !titulares.includes(x.id) && doElenco.has(x.id));
-    if (ficaram.length) alertas.push("RESERVA FORTE APONTADO NA VARREDURA FICOU NO BANCO: " + juntar(ficaram.map(x => x.nome + " (MÉDIA " + num(x.media) + ")")));
+    let reservaForte = false;
+    const temPontos = !!(m.players_points && Object.keys(m.players_points).length);
+    ficaram.forEach(x => {
+      const pB = ctx.players[x.id]; const feitos = pts(x.id) || 0;
+      const quem = pB ? nomePosTime(pB) : x.nome;
+      // sem os pontos da rodada no Sleeper não dá para conferir: fica o alerta, avisando
+      if (!temPontos) { reservaForte = true; alertas.push("RESERVA FORTE APONTADO NA VARREDURA FICOU NO BANCO: " + quem + " (MÉDIA " + num(x.media || 0) + "; SEM OS PONTOS DA RODADA NO SLEEPER PARA CONFERIR)"); return; }
+      if (!x.media || feitos < PERTO_DA_MEDIA * x.media) { descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", LONGE DA MÉDIA " + num(x.media || 0)); return; }
+      // o titular que ele substituiria: o apontado na varredura; se não houver, o que menos pontuou numa vaga em que ele cabe
+      let tId = x.tit && titulares.includes(x.tit) ? x.tit : null;
+      if (!tId && pB) tId = (titulares.map((id, i) => ({ id, i })).filter(o => o.id && o.id !== "0" && ctx.players[o.id] && (rp[o.i] ? cabeNoSlot(pB, rp[o.i]) : mesmaPosicao(pB, ctx.players[o.id])))
+        .sort((a, b) => (pts(a.id) || 0) - (pts(b.id) || 0))[0] || {}).id || null;
+      if (!tId) return;
+      const pT = ctx.players[tId], fT = pts(tId) || 0;
+      if (feitos <= fT) { descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", NÃO MAIS QUE O TITULAR " + nomePosTime(pT) + " (" + num(fT) + ")"); return; }
+      reservaForte = true;
+      alertas.push("RESERVA FORTE FICOU NO BANCO: " + quem + " FEZ " + num(feitos) + " (MÉDIA " + num(x.media) + ") > TITULAR " + nomePosTime(pT) + " FEZ " + num(fT));
+    });
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
     if (formacao && !formacao.ok) alertas.push(descFormacao(formacao));
     const avisado = (ctx.flags[liga.id] || []).includes(f);
-    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte: ficaram.length > 0 });
+    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, descartados, grave, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte });
   }
   times.sort((a, b) => a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
   return { liga, times, avisos, terca: true };
@@ -3793,7 +3845,7 @@ function textoAlertas(resultados, ctx, titulo) {
   const linhas = ["*" + titulo + " — SEMANA " + ctx.semana + "* (só comissários)"];
   let algum = false;
   for (const r of resultados) {
-    const ts = r.times.filter(t => (t.alertas && t.alertas.length) || (t.banco && t.banco.length));
+    const ts = r.times.filter(t => (t.alertas && t.alertas.length) || (t.banco && t.banco.length)).sort((a, b) => (b.grave ? 1 : 0) - (a.grave ? 1 : 0));
     if (!ts.length) continue; algum = true;
     linhas.push("", "*" + r.liga.nome.toUpperCase() + "*");
     ts.forEach(t => linhas.push("• " + (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar([...(t.alertas || []), ...(t.banco || [])])));
@@ -3873,6 +3925,7 @@ function desenharTerca(resultados, ctx) {
     el("span", { class: "count", text: "Semana " + ctx.semana }),
     el("span", { class: "pill wo", text: totWO + " W.O." }),
     el("span", { class: "pill info", text: totAl + " times para analisar" }),
+    resultados.some(r => r.times.some(t => t.grave)) ? el("span", { class: "pill wo", text: "🚨 " + resultados.reduce((s, r) => s + r.times.filter(t => t.grave).length, 0) + " sem QB (grave)" }) : null,
     el("span", { class: "pill warn", text: resultados.reduce((s, r) => s + irregularesDa(r, ctx).length, 0) + " escalação irregular marcada" }),
     el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
@@ -3882,7 +3935,8 @@ function desenharTerca(resultados, ctx) {
     trocEsc.map(x => x.nome + " pelo " + x.naRodada + " (hoje " + x.hoje + ")").join(", ") + "." }));
   if (b3) box.appendChild(el("p", { class: "foot", text: b4 ? "\"Lançar W.O. no Registro\" escreve direto na aba Registro da planilha (semana, liga, time, tipo, GM, franchises escaladas e o motivo) e não repete o que já estiver lá. \"Copiar W.O. para a planilha\" continua servindo para colar à mão." : "\"Copiar W.O. para a planilha\" copia Semana, Liga, Time, Tipo e GM: cole na primeira linha vazia da aba Registro, na coluna Semana." }));
   for (const r of resultados) {
-    const wo = r.times.filter(t => t.wo), al = r.times.filter(t => t.alertas.length);
+    const wo = r.times.filter(t => t.wo), al = r.times.filter(t => t.alertas.length).sort((a, b) => (b.grave ? 1 : 0) - (a.grave ? 1 : 0));
+    const desc = r.times.filter(t => t.descartados && t.descartados.length);
     const fb2 = el("span", { class: "copied" });
     const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar W.O.");
     bc.addEventListener("click", () => copiar(mensagemWO(r, ctx), fb2));
@@ -3902,18 +3956,21 @@ function desenharTerca(resultados, ctx) {
           marcarIrregular(ctx.semana, r.liga.id, t.franquia, cb.checked); ctx.woLancado = null;
           const y = window.scrollY; desenharTerca(resultados, ctx); window.scrollTo(0, y);
         });
-        ul2.appendChild(el("li", { class: marcada ? "wo" : t.reservaForte ? "warn" : "info" },
+        ul2.appendChild(el("li", { class: marcada || t.grave ? "wo" : t.reservaForte ? "warn" : "info" },
           el("label", { class: "marca" }, cb, el("span", { text: "irregular" })),
           (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas)));
       });
       body.appendChild(ul2);
     }
+    if (desc.length) body.appendChild(el("div", { class: "foot", text: "Não entram na análise (sem opção no banco, ou reserva que não pontuou perto da média ou não fez mais que o titular): " +
+      desc.map(t => "@" + t.gm + " (" + t.franquia + "): " + juntar(t.descartados)).join("; ") + "." }));
     if (r.liga.formacao && r.times.length) body.appendChild(blocoFormacao(r));
     box.appendChild(el("article", { class: "card" },
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }),
         el("div", { class: "toolbar", style: "margin-top:4px" },
           el("span", { class: "pill " + (wo.length ? "wo" : "ok"), text: wo.length + " W.O." }),
           el("span", { class: "pill info", text: al.length + " para analisar" }),
+          al.some(t => t.grave) ? el("span", { class: "pill wo", text: "🚨 " + al.filter(t => t.grave).length + " sem QB" }) : null,
           irregularesDa(r, ctx).length ? el("span", { class: "pill warn", text: irregularesDa(r, ctx).length + " irregular" }) : null)),
         el("div", { class: "toolbar" }, bc, fb2)), body));
   }
@@ -4094,7 +4151,7 @@ async function rodar() {
       const timesSnap = {}; for (const [id, p] of Object.entries(players)) if (p && p.team) timesSnap[p.team] = (timesSnap[p.team] ? timesSnap[p.team] + "," : "") + id;   // time de cada um na hora da varredura (por time, para ocupar pouco)
       const flag = {}; resultados.forEach(r => { flag[r.liga.id] = r.times.filter(t => t.abaixo || t.irregular).map(t => t.franquia); });
       let reservas = null;
-      if (ctx.banco) { reservas = {}; resultados.forEach(r => { const m = {}; r.times.forEach(t => { if (t.reservas && t.reservas.length) m[t.franquia] = t.reservas.map(x => ({ id: x.id, nome: x.nome, media: x.media })); }); reservas[r.liga.id] = m; }); }
+      if (ctx.banco) { reservas = {}; resultados.forEach(r => { const m = {}; r.times.forEach(t => { if (t.reservas && t.reservas.length) m[t.franquia] = t.reservas.map(x => ({ id: x.id, nome: x.nome, media: x.media, tit: x.tit })); }); reservas[r.liga.id] = m; }); }
       const ligasMsg = resultados.map(r => ({ id: r.liga.id, nome: r.liga.nome, texto: r.erro ? "" : mensagem(r, ctx),
         abaixo: r.times.filter(t => t.abaixo).length, irregular: r.times.filter(t => !t.abaixo && t.irregular).length, fora: r.times.filter(t => t.foraFormacao).length }));
       const gN = GRUPOS.find(x => x.id === grupo); const temporada = temporadaAtual();
