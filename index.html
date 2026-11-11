@@ -306,7 +306,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 c (escalação irregular: sem QB é grave; reserva só conta se pontuou; franchise que daria W.O. só com franchise no banco)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 d (W.O. e escalação irregular numerados pelo Registro)</p>
 </div>
 
 <script>
@@ -3721,6 +3721,50 @@ function textoDefesas(res) {
   return linhas.join("\n");
 }
 
+// ---------------------------------------------------------------- terça: numeração de W.O. e EI
+// Histórico do Registro da planilha (semana, liga, time, tipo; sem os anulados). Linha sem semana = migrada da planilha antiga, conta como anterior.
+// REGISTRO_INICIO
+const REGISTRO_WO_EI = { em: "11/11/2026", linhas: [
+  [null, "BFA Franchise", "Buccaneers", "WO"],
+  [null, "BFA Franchise", "Panthers", "Escalação irregular"],
+  [null, "BFA Sloucos", "Commanders", "WO"],
+  [null, "BFA Sloucos", "Patriots", "WO"],
+  [null, "BFA Lucky", "Colts", "WO"],
+  [null, "BFA Lucky", "Cowboys", "WO"],
+  [null, "BFA Lucky", "Panthers", "WO"],
+  [null, "BFA New Gen", "Buccaneers", "WO"],
+  [null, "BFA New Gen", "Commanders", "WO"],
+  [null, "BFA New Gen", "Cowboys", "WO"],
+  [null, "BFA New Gen", "Dolphins", "WO"],
+  [null, "BFA New Gen", "Jets", "WO"],
+  [null, "BFA New Gen", "Jets", "WO"],
+  [null, "BFA New Gen", "Panthers", "WO"],
+  [null, "BFA Sorte", "Commanders", "WO"],
+  [null, "BFA Sorte", "Commanders", "WO"],
+  [null, "BFA Sorte", "Titans", "WO"],
+  [null, "BFA Indiana Jones", "Cardinals", "WO"],
+  [null, "BFA Indiana Jones", "Chiefs", "WO"],
+  [null, "BFA Jalen Reagor", "Cardinals", "WO"],
+  [null, "BFA Fab One", "Eagles", "WO"],
+  [null, "BFA XFL", "Commanders", "WO"],
+  [null, "BFA XFL", "Commanders", "WO"],
+  [null, "BFA XFL", "Dolphins", "WO"],
+  [null, "BFA BGL", "Ravens", "WO"],
+  [null, "BFA BGL", "Ravens", "WO"],
+  [null, "BFA BGL", "Vikings", "WO"]
+] };
+// REGISTRO_FIM
+const normReg = x => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
+// número desta ocorrência (1, 2, 3...) para o time na liga, contando as do Registro de semanas anteriores (ou sem semana)
+function numeroOcorrencia(ligaNome, time, tipo, semana) {
+  const L = normReg(ligaNome), T = normReg(time), K = normReg(tipo);
+  return REGISTRO_WO_EI.linhas.filter(r => normReg(r[1]) === L && normReg(r[2]) === T && normReg(r[3]) === K && (r[0] == null || r[0] < semana)).length + 1;
+}
+// Regra 4 (escada de W.O.), a mesma da coluna "Regra 4" do Registro
+const ESCADA_WO = ["DERROTA DA PARTIDA", "PERDE A ESCOLHA DA 3ª RODADA", "PERDE A ESCOLHA DA 2ª RODADA", "PERDE A ESCOLHA DA 1ª RODADA", "EXCLUSÃO DA LIGA"];
+const txtNumWO = n => n + "º W.O. (" + ESCADA_WO[Math.min(n, 5) - 1] + ")";
+const txtNumEI = n => n + "ª ESCALAÇÃO IRREGULAR";
+
 // ---------------------------------------------------------------- terça: conferência de W.O.
 const PERTO_DA_MEDIA = 0.8;   // reserva forte que ficou no banco só conta se fez pelo menos 80% da média usada na varredura
 function avaliarTerca(liga, dados, ctx) {
@@ -3822,14 +3866,16 @@ function avaliarTerca(liga, dados, ctx) {
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
     if (formacao && !formacao.ok) alertas.push(descFormacao(formacao));
     const avisado = (ctx.flags[liga.id] || []).includes(f);
-    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, descartados, grave, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte });
+    const nWO = numeroOcorrencia(liga.nome, f, "WO", ctx.semana), nEI = numeroOcorrencia(liga.nome, f, "Escalação irregular", ctx.semana);
+    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, descartados, grave, nWO, nEI, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte });
   }
   times.sort((a, b) => a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
   return { liga, times, avisos, terca: true };
 }
 function fraseWO(t) {
   const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
-  return "@" + t.gm + " (" + t.franquia + ") FICOU COM " + t.validos + " FRANCHISES" + (ruins.length ? " POIS " + juntar(ruins) + " NA VARREDURA" : " ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "");
+  return "@" + t.gm + " (" + t.franquia + ") FICOU COM " + t.validos + " FRANCHISES" + (ruins.length ? " POIS " + juntar(ruins) + " NA VARREDURA" : " ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") +
+    (t.nWO ? " · " + txtNumWO(t.nWO) : "");
 }
 // escalações irregulares marcadas pelos comissários na terça (guardadas neste aparelho, por semana)
 const chaveIrr = semana => "bfa-irr-" + temporadaAtual() + "-" + semana;
@@ -3846,7 +3892,7 @@ function mensagemWO(res, ctx) {
   if (wo.length) { linhas.push("❌ W.O.:"); wo.forEach(t => linhas.push("• " + fraseWO(t))); }
   else linhas.push("✅ Nenhum W.O. nesta semana.");
   linhas.push("");
-  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas))); linhas.push(""); }
+  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas) + (t.nEI ? " · " + txtNumEI(t.nEI) : ""))); linhas.push(""); }
   const bye = res.times.filter(t => t.bye).map(t => t.franquia).sort();
   if (bye.length) linhas.push("Bye (isentos): " + bye.join(", "));
   linhas.push("Conferência feita em " + ctx.quando);
@@ -3941,6 +3987,8 @@ function desenharTerca(resultados, ctx) {
     el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
   if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
+  if (resultados.some(r => r.liga.grupo === "bfa")) box.appendChild(el("p", { class: "foot", text: "Numeração de W.O. e escalação irregular (por time na liga): pelo Registro da planilha" +
+    (REGISTRO_WO_EI.em ? " como estava em " + REGISTRO_WO_EI.em : "") + ", mais a ocorrência desta semana. Anulados não contam." }));
   const trocEsc = (ctx.trocados || []).filter(x => resultados.some(r => r.times.some(t => (t.titulares || []).includes(x.id))));
   if (trocEsc.length) box.appendChild(el("p", { class: "foot", text: "Trocados depois da rodada (contam pelo time em que jogaram a semana " + ctx.semana + "): " +
     trocEsc.map(x => x.nome + " pelo " + x.naRodada + " (hoje " + x.hoje + ")").join(", ") + "." }));
@@ -3969,7 +4017,7 @@ function desenharTerca(resultados, ctx) {
         });
         ul2.appendChild(el("li", { class: marcada || t.grave ? "wo" : t.reservaForte ? "warn" : "info" },
           el("label", { class: "marca" }, cb, el("span", { text: "irregular" })),
-          (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas)));
+          (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas) + (t.nEI ? " · " + (marcada ? "" : "SERIA A ") + txtNumEI(t.nEI) : "")));
       });
       body.appendChild(ul2);
     }
