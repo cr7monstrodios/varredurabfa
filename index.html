@@ -262,7 +262,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <details id="tankBox" class="cal" style="margin-top:12px">
         <summary>🕵️ Caçar tank numa liga</summary>
         <div class="cal-body">
-          <div class="hint">Confere todos os times de uma liga, não só o seu: titular OUT, IR, SUS ou de bye, spot vazio e reserva com média acima da do titular (as mesmas diferenças de cima). Nas semanas que já acabaram vale quem jogou; na semana em andamento, o status de agora.</div>
+          <div class="hint">Confere todos os times de uma liga, não só o seu: titular OUT, IR, SUS ou de bye, spot vazio e reserva com média acima da do titular (as mesmas diferenças de cima). Nas semanas que já acabaram vale quem jogou; na semana em andamento, o status de agora (quem já entrou em campo e se machucou no jogo não conta).</div>
           <select id="tankLiga" aria-label="Liga para caçar tank" style="max-width:100%"><option value="">Abra para carregar suas ligas</option></select>
           <label class="f">Ou cole o link (ou o número) de outra liga <input id="tankId" type="text" class="txt" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sleeper.com/leagues/…"></label>
           <div>
@@ -310,7 +310,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 15/11/2026 (caça ao tank: escolha de semanas e pontos/média de quem estava no banco)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 15/11/2026 b (quem já entrou em campo e se machucou no jogo não é acusado)</p>
 </div>
 
 <script>
@@ -853,6 +853,17 @@ async function emLotes(itens, n, fn) {
 }
 // Problemas da escalação. Com o elenco e as vagas da liga, cada problema diz o que fazer:
 // vermelho = tem opção no banco para a vaga (corrigir); amarelo = não tem opção no banco.
+// Jogador que já entrou em campo na semana (snap na estatística do Sleeper ou pontos na liga) não é acusado
+// pelo status de agora: se ficou OUT depois, foi lesão durante o jogo.
+function jaEntrouEmCampo(S, pp) {
+  return (id, p) => {
+    if (pp && pp[id] != null && Number(pp[id]) !== 0) return true;
+    if (!S || !p || posDe(p).includes("DEF")) return false;   // defesa não tem snap próprio
+    const v = S[id]; return !!(v && (v.gp > 0 || v.off_snp > 0 || v.def_snp > 0 || v.st_snp > 0));
+  };
+}
+// status de agora, mas nenhum para quem já jogou na semana
+const statusDaSemana = (jogou) => (id, p) => jogou(id, p) ? null : ((p && p.injury_status) || null);
 function problemasDoTime(titulares, ctx, extra) {
   const itens = [];
   const rp = extra && extra.rp && extra.rp.length ? extra.rp : null;
@@ -863,7 +874,7 @@ function problemasDoTime(titulares, ctx, extra) {
   // com as médias (caça ao tank), as opções vêm com a média e a melhor primeiro
   const medDe = p => ctx.medias ? ctx.medias[idDe.get(p)] : null;
   const livresPara = slot => banco.filter(p => cabeNoSlot(p, slot) && p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && est(p) === "early")
-    && (!p.injury_status || p.injury_status === "Questionable")).sort((a, b) => ctx.medias ? (medDe(b) || 0) - (medDe(a) || 0) : 0);
+    && (s0 => !s0 || s0 === "Questionable")(ctx.statusDe ? ctx.statusDe(idDe.get(p), p) : p.injury_status)).sort((a, b) => ctx.medias ? (medDe(b) || 0) - (medDe(a) || 0) : 0);
   const opcaoTxt = p => !ctx.medias ? nomePosTime(p) : nomePosTime(p).replace(/\)$/, ", " + (medDe(p) != null ? "MÉDIA " + num(medDe(p)) : "SEM MÉDIA") + ")");
   const semOpcao = () => extra && extra.cap && !extra.temVaga ? " · SEM VAGA NO ELENCO PARA PEGAR ALGUÉM (LIGA CAP)" : " · SEM OPÇÃO NO BANCO, VEJA A WAIVER";
   if (!roster) { const vazios = titulares.filter(id => !id || id === "0").length; if (vazios) itens.push({ txt: vazios + (vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO"), tipo: "wo" }); }
@@ -886,7 +897,7 @@ function problemasDoTime(titulares, ctx, extra) {
     else if (e === "bye") { if (ctx.semQbKBye && ehQbOuK(p)) return; motivo = " ESTÁ DE BYE"; }
     else {
       if (ctx.semStatusDe && p.team === ctx.semStatusDe) return;
-      const s = p.injury_status; if (!s) return;
+      const s = ctx.statusDe ? ctx.statusDe(id, p) : p.injury_status; if (!s) return;
       if (s === "Questionable") { if (ctx.mostrarQ) itens.push({ txt: nomeJ + " ESTÁ QUESTIONABLE", pos, tipo: "warn" }); return; }
       motivo = " ESTÁ " + (NAO_CONTA[s] || String(s).toUpperCase());
     }
@@ -921,8 +932,9 @@ async function rodarMeus() {
     const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
     const players = await carregarJogadores(status);
     const banco = $("meusBanco").checked;
-    const ctx = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked,
-      statusDe: (id, p) => (p && p.injury_status) || null, margemAtaque: parseInt($("meusMargemA").value, 10) || 3, margemDefesa: parseInt($("meusMargemD").value, 10) || 5 };
+    const Ssem = await statsDaSemana(temporada, semana).catch(() => null);   // quem já entrou em campo nesta semana
+    const ctxG = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked,
+      statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("meusMargemA").value, 10) || 3, margemDefesa: parseInt($("meusMargemD").value, 10) || 5 };
     const { cfg } = configMinhas(ativas);
     const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
       banco, semMedias: [], erroMedias: null };
@@ -949,6 +961,7 @@ async function rodarMeus() {
           }
           const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
           const titulares = m ? m.starters : (meu.starters || []);
+          const ctx = { ...ctxG, statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, m && m.players_points)) };
           const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 },
             { roster: meu, rp: league && league.roster_positions, cap: ligaCap(lg.name), temVaga: temVagaNoElenco(meu, league) });
           const fm = league && comFormacao ? avaliarFormacao(league, titulares, players) : null;
@@ -1176,8 +1189,9 @@ async function rodarPessoal() {
         Object.assign(waiver, { semanas: cand.semanas, ultima: semanas[semanas.length - 1] || null, nSemanas: semanas.length });
       } catch (e) { waiver.erro = e.message; }
     }
-    const ctx = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
-      statusDe: (id, p) => (p && p.injury_status) || null, margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
+    const Ssem = await statsDaSemana(temporada, semana).catch(() => null);   // quem já entrou em campo nesta semana
+    const ctxG = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
+      statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], semMedias: [], erroMedias: null, ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
       cfg, faltando, conferirFr, banco, waiver, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
     let feitas = 0;
@@ -1194,6 +1208,7 @@ async function rodarPessoal() {
         if (!meu) { res.semTime.push(lg.name); return; }
         const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
         const titulares = m ? m.starters : (meu.starters || []);
+        const ctx = { ...ctxG, statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, m && m.players_points)) };
         const fq = ehFranq ? franquiaDoMeuTime(lg, league, users, rosters, meu, c) : null;
         const camp = campanhaDe(rosters, meu);
         if (fq && ligaEmpateBye(lg.name) && (st.cal[ABBR[fq]] || "normal") === "bye") {   // franquia de bye = empate: a liga sai da varredura nesta semana
@@ -1410,6 +1425,8 @@ async function rodarTank() {
     const MT = (await rodadasAnteriores(id, maxW, falhasMt)).map(x => x || []);
     const players = await carregarJogadores(status);
     const STATS = {}; let erroStats = null;
+    let Sagora = null;   // semana em andamento: quem já entrou em campo (lesão durante o jogo não é tank)
+    if (agoraW) Sagora = await statsDaSemana(temporada, agoraW).catch(() => null);
     if (proc.length) {
       status("Lendo quem jogou em cada semana…");
       await Promise.all(proc.map(async w => { try { STATS[w] = await statsDaSemana(temporada, w); } catch (e) { if (feitas.includes(w)) erroStats = e.message; } }));
@@ -1436,13 +1453,13 @@ async function rodarTank() {
         const mt = doTime(MT[semana - 1], r), tit = mt ? mt.starters : (r.starters || []);
         if (empate && sig && (calAgora[sig] || "normal") === "bye") t.empate = true;
         else {
-          const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: (i, p) => (p && p.injury_status) || null, semQbKBye: liga32,
+          const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
             medias: semana > 1 ? mediasAte(semana) : null, ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
             .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige ? "wo" : "warn", forte: !!i.corrige }));
           if (semana > 1) {
             const noEscopo = p => !(ctx.ignorarAntecipados && (calAgora[p.team] || "normal") === "early");
-            const folga = folgaDe(tit, sig, i => { const x = players[i].injury_status; return !x || x === "Questionable"; });
+            const folga = folgaDe(tit, sig, i => { const x = ctx.statusDe(i, players[i]); return !x || x === "Questionable"; });
             sugestoesBanco(r, tit, ctx, mediasAte(semana), noEscopo, sig, folga, rp)
               .forEach(x => t.agora.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
@@ -1546,7 +1563,7 @@ function desenharTank(t) {
     "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga."];
   if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + rotSemanas(t.feitas).toLowerCase() + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.",
     "Para cada opção do banco aparece quanto ela fez na semana e a média dela nas semanas anteriores (o que o GM sabia na hora; sem média = menos de 2 jogos pontuando).");
-  if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem.");
+  if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem. Quem já entrou em campo nela (snap ou pontos) não é acusado, mesmo que esteja OUT agora: foi lesão durante o jogo.");
   if (t.ignorouEarly) regra.push("Jogadores dos jogos antecipados desta semana ficaram de fora (opção marcada acima).");
   box.appendChild(el("p", { class: "foot", text: regra.join(" ") }));
   if (t.erroStats) box.appendChild(el("p", { class: "status err", text: "Não consegui ler quem jogou em alguma semana (" + t.erroStats + "): essas semanas ficaram de fora. " + DICA_LIMITE }));
