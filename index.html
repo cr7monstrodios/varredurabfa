@@ -262,10 +262,14 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <details id="tankBox" class="cal" style="margin-top:12px">
         <summary>🕵️ Caçar tank numa liga</summary>
         <div class="cal-body">
-          <div class="hint">Confere todos os times de uma liga, não só o seu: titular OUT, IR, SUS ou de bye, spot vazio e reserva com média acima da do titular (as mesmas diferenças de cima). Usa a semana escolhida lá em cima.</div>
+          <div class="hint">Confere todos os times de uma liga, não só o seu: titular OUT, IR, SUS ou de bye, spot vazio e reserva com média acima da do titular (as mesmas diferenças de cima). Nas semanas que já acabaram vale quem jogou; na semana em andamento, o status de agora.</div>
           <select id="tankLiga" aria-label="Liga para caçar tank" style="max-width:100%"><option value="">Abra para carregar suas ligas</option></select>
           <label class="f">Ou cole o link (ou o número) de outra liga <input id="tankId" type="text" class="txt" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sleeper.com/leagues/…"></label>
-          <label class="op"><input id="tankHist" type="checkbox" checked> <span>Olhar também as semanas que já acabaram (titular que não jogou com alguém que jogou no banco)</span></label>
+          <div>
+            <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">Semanas (toque para marcar ou desmarcar; dá para escolher várias)</div>
+            <div id="tankSemanas" class="chips" style="margin-top:6px" role="group" aria-label="Semanas da caça ao tank"></div>
+            <div class="toolbar" style="margin-top:6px"><button id="tankTodas" class="btn ghost" type="button">Todas</button><button id="tankUltima" class="btn ghost" type="button">Só a última</button></div>
+          </div>
           <div class="toolbar"><button id="rodarTank" class="btn" type="button">Caçar tank</button><span id="statusTank" class="status" role="status" aria-live="polite"></span></div>
         </div>
       </details>
@@ -306,7 +310,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 11/11/2026 e (numeração com a regra da troca de GM)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 15/11/2026 (caça ao tank: escolha de semanas e pontos/média de quem estava no banco)</p>
 </div>
 
 <script>
@@ -854,9 +858,13 @@ function problemasDoTime(titulares, ctx, extra) {
   const rp = extra && extra.rp && extra.rp.length ? extra.rp : null;
   const roster = rp && extra.roster ? extra.roster : null;
   const est = p => p && p.team ? (ctx.cal[p.team] || "normal") : "semtime";
-  const banco = roster ? bancoDoTime(roster, titulares).map(id => ctx.players[id]).filter(Boolean) : [];
+  const idDe = new Map();
+  const banco = roster ? bancoDoTime(roster, titulares).filter(id => ctx.players[id]).map(id => { idDe.set(ctx.players[id], id); return ctx.players[id]; }) : [];
+  // com as médias (caça ao tank), as opções vêm com a média e a melhor primeiro
+  const medDe = p => ctx.medias ? ctx.medias[idDe.get(p)] : null;
   const livresPara = slot => banco.filter(p => cabeNoSlot(p, slot) && p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && est(p) === "early")
-    && (!p.injury_status || p.injury_status === "Questionable"));
+    && (!p.injury_status || p.injury_status === "Questionable")).sort((a, b) => ctx.medias ? (medDe(b) || 0) - (medDe(a) || 0) : 0);
+  const opcaoTxt = p => !ctx.medias ? nomePosTime(p) : nomePosTime(p).replace(/\)$/, ", " + (medDe(p) != null ? "MÉDIA " + num(medDe(p)) : "SEM MÉDIA") + ")");
   const semOpcao = () => extra && extra.cap && !extra.temVaga ? " · SEM VAGA NO ELENCO PARA PEGAR ALGUÉM (LIGA CAP)" : " · SEM OPÇÃO NO BANCO, VEJA A WAIVER";
   if (!roster) { const vazios = titulares.filter(id => !id || id === "0").length; if (vazios) itens.push({ txt: vazios + (vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO"), tipo: "wo" }); }
   titulares.forEach((id, i) => {
@@ -864,7 +872,7 @@ function problemasDoTime(titulares, ctx, extra) {
     if (!id || id === "0") {
       if (!roster) return;
       const lv = livresPara(slot);
-      if (lv.length) { itens.push({ txt: "SPOT VAZIO (" + rot + ") · NO BANCO: " + juntar(lv.slice(0, 2).map(nomePosTime)), tipo: "wo", corrige: true }); return; }
+      if (lv.length) { itens.push({ txt: "SPOT VAZIO (" + rot + ") · NO BANCO: " + juntar(lv.slice(0, 2).map(opcaoTxt)), tipo: "wo", corrige: true }); return; }
       const byes = banco.filter(p => cabeNoSlot(p, slot) && est(p) === "bye");
       itens.push({ txt: "SPOT VAZIO (" + rot + ")" + (byes.length ? ": " + juntar(byes.slice(0, 2).map(nomeDe)) + " DE BYE" : "") + semOpcao(), tipo: "warn" });
       return;
@@ -885,7 +893,7 @@ function problemasDoTime(titulares, ctx, extra) {
     if (!roster) { itens.push({ txt: nomeJ + motivo, pos, tipo: "wo" }); return; }
     const lv = livresPara(slot);
     // com opção no banco, a posição e o time do titular vão junto do nome dele (no fim ficariam parecendo ser do reserva)
-    if (lv.length) itens.push({ txt: nomePosTime(p) + motivo + " · NO BANCO: " + juntar(lv.slice(0, 2).map(nomePosTime)), tipo: "wo", corrige: true });
+    if (lv.length) itens.push({ txt: nomePosTime(p) + motivo + " · NO BANCO: " + juntar(lv.slice(0, 2).map(opcaoTxt)), tipo: "wo", corrige: true });
     else itens.push({ txt: nomeJ + motivo + semOpcao(), pos, tipo: "warn" });
   });
   return itens;
@@ -1359,36 +1367,57 @@ async function carregarLigasTank(forcar) {
   const salvo = armazenar.get("bfa-tank-liga");
   lista.forEach(l => { const o = el("option", { value: l.id }, l.nome); if (l.id === salvo) o.selected = true; sel.appendChild(o); });
 }
+// semanas da caça ao tank: um botão por semana até a atual (várias podem ser marcadas)
+function semanaAtualTank() { return Math.max(1, Math.min(18, st.semanaSleeper || parseInt($("semana").value, 10) || 1)); }
+function montarSemanasTank() {
+  const W = semanaAtualTank(), ultima = Math.max(0, ultimaSemanaCompleta(W)), box = $("tankSemanas");
+  if (!TANK.sel || TANK.selAte !== W) { TANK.sel = new Set(Array.from({ length: W }, (_, i) => i + 1)); TANK.selAte = W; }   // padrão: todas
+  box.textContent = "";
+  for (let w = 1; w <= W; w++) {
+    const b = el("button", { type: "button", class: "chip", "data-on": String(TANK.sel.has(w)), "aria-pressed": String(TANK.sel.has(w)),
+      title: w > ultima ? "semana em andamento: status de agora" : "semana encerrada: vale quem jogou" }, "S" + w + (w > ultima ? " (agora)" : ""));
+    b.addEventListener("click", () => { if (TANK.sel.has(w)) TANK.sel.delete(w); else TANK.sel.add(w); montarSemanasTank(); });
+    box.appendChild(b);
+  }
+}
+const rotSemanas = ws => { if (!ws.length) return ""; if (ws.length === 1) return "SEMANA " + ws[0];
+  const seguidas = ws.every((w, i) => !i || w === ws[i - 1] + 1); return "SEMANAS " + (seguidas ? ws[0] + " A " + ws[ws.length - 1] : juntar(ws.map(String))); };
 async function rodarTank() {
   const btn = $("rodarTank"); const status = (t, err) => { $("statusTank").textContent = t; $("statusTank").className = "status" + (err ? " err" : ""); };
   const txt = $("tankId").value.trim(); let id = $("tankLiga").value;
   if (txt) { const m = txt.match(/leagues\/(\d+)/) || txt.match(/^(\d+)$/) || txt.match(/(\d{12,})/); if (!m) { status("Não achei o número da liga nesse link. Ele fica no endereço da liga, depois de /leagues/.", true); return; } id = m[1]; }
   if (!id) { status("Escolha uma liga ou cole o link dela.", true); return; }
   if (!txt) armazenar.set("bfa-tank-liga", id);
-  status("Conferindo a semana no Sleeper…"); await conferirSemana();
-  const semana = parseInt($("semana").value, 10);
-  if (!(semana >= 1 && semana <= 18)) { status("Escolha uma semana de 1 a 18.", true); return; }
-  if (semana !== st.semana) setSemana(semana);
+  status("Conferindo a semana no Sleeper…"); await conferirSemana(); montarSemanasTank();
+  const W = semanaAtualTank(), ultima = Math.max(0, ultimaSemanaCompleta(W));
+  const sel = [...TANK.sel].filter(w => w >= 1 && w <= W).sort((a, b) => a - b);
+  if (!sel.length) { status("Marque pelo menos uma semana.", true); return; }
+  const agoraW = sel.find(w => w > ultima) || null;            // semana em andamento (status de agora)
+  const feitas = sel.filter(w => w <= ultima);                 // semanas encerradas (vale quem jogou)
+  const semana = agoraW || feitas[feitas.length - 1], acabou = !agoraW;
+  // para "ficou sem jogar de novo" também lê a semana anterior a cada escolhida, sem mostrar o que não foi pedido
+  const proc = [...new Set([...feitas, ...feitas.map(w => w - 1).filter(w => w >= 1)])].sort((a, b) => a - b);
+  const calAgora = agoraW ? (agoraW === st.semana ? st.cal : calendarioDaSemana(agoraW)) : null;
   btn.disabled = true;
   try {
     status("Lendo a liga…");
     const [league, users, rosters] = await Promise.all([getJSON("/league/" + id), getJSON("/league/" + id + "/users").catch(() => []), getJSON("/league/" + id + "/rosters")]);
     if (!league || !Array.isArray(rosters) || !rosters.length) { status("Não achei essa liga no Sleeper.", true); return; }
     const temporada = String(league.season || temporadaAtual());
-    const ultima = Math.max(0, ultimaSemanaCompleta(semana));
-    const acabou = semana <= ultima;   // a semana escolhida já terminou: vale quem jogou
-    const feitas = $("tankHist").checked ? Array.from({ length: Math.min(ultima, semana) }, (_, i) => i + 1) : acabou ? [semana] : [];
+    const maxW = sel[sel.length - 1];
     status("Lendo as rodadas da liga…");
     const falhasMt = [];
-    const MT = (await rodadasAnteriores(id, semana, falhasMt)).map(x => x || []);
+    const MT = (await rodadasAnteriores(id, maxW, falhasMt)).map(x => x || []);
     const players = await carregarJogadores(status);
     const STATS = {}; let erroStats = null;
-    if (feitas.length) {
+    if (proc.length) {
       status("Lendo quem jogou em cada semana…");
-      await Promise.all(feitas.map(async w => { try { STATS[w] = await statsDaSemana(temporada, w); } catch (e) { erroStats = e.message; } }));
+      await Promise.all(proc.map(async w => { try { STATS[w] = await statsDaSemana(temporada, w); } catch (e) { if (feitas.includes(w)) erroStats = e.message; } }));
     }
-    const semDados = feitas.filter(w => STATS[w] && !Object.keys(STATS[w]).length);   // semana sem estatística no Sleeper: fica de fora
+    const semDados = proc.filter(w => STATS[w] && !Object.keys(STATS[w]).length);   // semana sem estatística no Sleeper: fica de fora
     semDados.forEach(w => { delete STATS[w]; });
+    const MED = {}; const mediasAte = w => (MED[w] = MED[w] || mediasDaLiga(MT.slice(0, w - 1)));   // média de cada jogador nas semanas antes de w
+    const txtMedia = (id, w) => { const m = mediasAte(w)[id]; return m != null ? "MÉDIA " + num(m) : "SEM MÉDIA"; };
     let fr = {}; try { fr = mapearFranquias({ id }, league, users || [], rosters).fr || {}; } catch (e) {}
     const ligaSite = LIGAS.find(l => l.id === id);
     const c = configMinhas([{ league_id: id, name: league.name }]).cfg[id];
@@ -1405,22 +1434,24 @@ async function rodarTank() {
         pts: (s.fpts || 0) + (s.fpts_decimal || 0) / 100, agora: [], antes: [], empate: false };
       if (!acabou) {   // semana em andamento: status de agora
         const mt = doTime(MT[semana - 1], r), tit = mt ? mt.starters : (r.starters || []);
-        if (empate && sig && (st.cal[sig] || "normal") === "bye") t.empate = true;
+        if (empate && sig && (calAgora[sig] || "normal") === "bye") t.empate = true;
         else {
-          const ctx = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: (i, p) => (p && p.injury_status) || null, semQbKBye: liga32, ...margens };
+          const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: (i, p) => (p && p.injury_status) || null, semQbKBye: liga32,
+            medias: semana > 1 ? mediasAte(semana) : null, ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
             .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige ? "wo" : "warn", forte: !!i.corrige }));
           if (semana > 1) {
-            const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
+            const noEscopo = p => !(ctx.ignorarAntecipados && (calAgora[p.team] || "normal") === "early");
             const folga = folgaDe(tit, sig, i => { const x = players[i].injury_status; return !x || x === "Questionable"; });
-            sugestoesBanco(r, tit, ctx, mediasDaLiga(MT.slice(0, semana - 1)), noEscopo, sig, folga, rp)
+            sugestoesBanco(r, tit, ctx, mediasAte(semana), noEscopo, sig, folga, rp)
               .forEach(x => t.agora.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
         }
       }
       let semJogoAntes = new Set();   // titulares que não jogaram na semana anterior
       const reservasW = [];            // semanas com reserva forte no banco (vira uma linha só)
-      for (const w of feitas) {
+      for (const w of proc) {
+        const mostra = feitas.includes(w);   // semana anterior lida só para "ficou sem jogar de novo"
         const mt = doTime(MT[w - 1], r), S = STATS[w], cal = calendarioDaSemana(w);
         if (!mt || !S) { semJogoAntes = new Set(); continue; }
         if (empate && sig && (cal[sig] || "normal") === "bye") { semJogoAntes = new Set(); continue; }   // franquia de bye = empate nesta liga
@@ -1444,16 +1475,19 @@ async function rodarTank() {
           const pos = p ? [p.position, p.team].filter(Boolean).join(" · ") : "";
           // com opção no banco, a posição e o time do titular vão junto do nome dele (no fim ficariam parecendo ser do reserva)
           const quemPT = vazio ? quem : nomePosTime(p) + (bye ? " ESTAVA DE BYE" : " NÃO JOGOU");
-          if (opc.length) { usados.add(opc[0]); t.antes.push({ w, txt: "S" + w + ": " + quemPT + " · NO BANCO JOGOU " + nomePosTime(players[opc[0]]) + " · " + num(pp[opc[0]] || 0) + " PTS", tipo: "wo", forte: true }); }
+          if (opc.length) usados.add(opc[0]);
+          if (!mostra) return;
+          if (opc.length) t.antes.push({ w, txt: "S" + w + ": " + quemPT + " · NO BANCO JOGOU " + nomePosTime(players[opc[0]]) + " · FEZ " + num(pp[opc[0]] || 0) + " PTS · " + txtMedia(opc[0], w), tipo: "wo", forte: true });
           else if (vazio) t.antes.push({ w, txt: "S" + w + ": " + quem + " · SEM OPÇÃO NO BANCO", tipo: "warn" });
           else if (semJogoAntes.has(sid)) t.antes.push({ w, txt: "S" + w + ": " + nomeDe(p) + " FICOU SEM JOGAR DE NOVO E SEGUIU TITULAR · SEM OPÇÃO NO BANCO", pos, tipo: "warn" });
         });
         semJogoAntes = semJogo;
-        if (w > 1) {
+        if (mostra && w > 1) {
           const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", ...margens };
           const folga = folgaDe(tit, sig, i => jogouNaSemana(S, i, players[i], cal));
-          const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasDaLiga(MT.slice(0, w - 1)), () => true, sig, folga, rp);
-          if (rs.length) reservasW.push({ w, txt: rs[0].txt });
+          const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasAte(w), () => true, sig, folga, rp);
+          // quanto o reserva fez naquela semana (e o titular que ficou no lugar dele)
+          if (rs.length) reservasW.push({ w, txt: rs[0].txt + " · NA SEMANA O RESERVA FEZ " + num(pp[rs[0].id] || 0) + (rs[0].tit ? " E O TITULAR " + num(pp[rs[0].tit] || 0) : "") });
         }
       }
       if (reservasW.length) {
@@ -1468,8 +1502,9 @@ async function rodarTank() {
     times.sort((a, b) => (b.peso - a.peso) || ((a.v - a.d) - (b.v - b.d)) || a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    st.res.tank = { liga: { id, nome: league.name }, semana, acabou, feitas: feitas.filter(w => STATS[w]), times, quando, margens, erroStats, semDados, ignorouEarly: !acabou && $("pEarly").checked,
-      erroMt: falhasMt.length ? falhasMt.length + " de " + semana + " rodadas (" + falhasMt[0] + ")" : null };
+    st.res.tank = { liga: { id, nome: league.name }, semana, acabou, sel, feitas: feitas.filter(w => STATS[w]), times, quando, margens, erroStats, semDados: semDados.filter(w => feitas.includes(w)),
+      ignorouEarly: !acabou && $("pEarly").checked,
+      erroMt: falhasMt.length ? falhasMt.length + " de " + maxW + " rodadas (" + falhasMt[0] + ")" : null };
     st.vistaPessoal = "tank";
     if (st.grupo === "pessoal") desenharTank(st.res.tank);
     status("Pronto. " + quando + ".");
@@ -1479,10 +1514,9 @@ async function rodarTank() {
 }
 const recordeTank = x => x.v + "-" + x.d + (x.e ? "-" + x.e : "");
 const itensTank = (t, x) => [...x.agora.map(i => ({ ...i, txt: "S" + t.semana + ": " + i.txt })), ...x.antes.slice().sort((a, b) => b.w - a.w)];
-const faixaSemanas = ws => !ws.length ? "" : ws.length === 1 ? "semana " + ws[0] : "semanas " + ws[0] + " a " + ws[ws.length - 1];
 function textoTank(t) {
   const com = t.times.filter(x => x.fortes || x.leves);
-  const linhas = ["*POSSÍVEL TANK — " + t.liga.nome.toUpperCase() + " — SEMANA " + t.semana + "*", ""];
+  const linhas = ["*POSSÍVEL TANK — " + t.liga.nome.toUpperCase() + " — " + rotSemanas(t.sel || [t.semana]) + "*", ""];
   if (!com.length) linhas.push("✅ Nenhum sinal de tank.", "");
   com.forEach(x => {
     linhas.push((x.fortes ? "🚨" : "⚠️") + " @" + x.gm + " (" + [x.franquia || x.nome, recordeTank(x)].filter(Boolean).join(" · ") + ")");
@@ -1491,7 +1525,7 @@ function textoTank(t) {
   });
   const limpos = t.times.filter(x => !x.fortes && !x.leves);
   if (limpos.length) linhas.push("✅ Sem sinal: " + limpos.map(x => "@" + x.gm).join(", "));
-  linhas.push("", "Conferido em " + t.quando + (t.feitas.length ? " (" + faixaSemanas(t.feitas) + " pelo que jogaram)" : ""));
+  linhas.push("", "Conferido em " + t.quando + (t.feitas.length ? " (" + rotSemanas(t.feitas).toLowerCase() + " pelo que jogaram)" : ""));
   return linhas.join("\n");
 }
 function desenharTank(t) {
@@ -1506,11 +1540,12 @@ function desenharTank(t) {
     el("span", { class: "count", text: "🕵️ " + t.liga.nome }),
     el("span", { class: "pill " + (fortes.length ? "wo" : "ok"), text: fortes.length + " de " + t.times.length + " times com sinal forte" }),
     el("span", { class: "pill warn", text: leves.length + " só com sinal leve" }),
-    el("span", { class: "foot", text: "semana " + t.semana }), bc, fb, volta));
+    el("span", { class: "foot", text: rotSemanas(t.sel || [t.semana]).toLowerCase() }), bc, fb, volta));
   const regra = ["Vermelho = sinal forte: " + (t.acabou ? "" : "na semana " + t.semana + ", titular OUT, IR, SUS, de bye ou sem time, ou spot vazio, tendo opção no banco para a vaga; ") +
     (t.feitas.length ? "nas semanas que já acabaram, titular que não jogou (ou spot vazio) enquanto alguém que cabia na vaga jogou no banco." : "").replace(/; $/, "."),
     "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga."];
-  if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + faixaSemanas(t.feitas) + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.");
+  if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + rotSemanas(t.feitas).toLowerCase() + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.",
+    "Para cada opção do banco aparece quanto ela fez na semana e a média dela nas semanas anteriores (o que o GM sabia na hora; sem média = menos de 2 jogos pontuando).");
   if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem.");
   if (t.ignorouEarly) regra.push("Jogadores dos jogos antecipados desta semana ficaram de fora (opção marcada acima).");
   box.appendChild(el("p", { class: "foot", text: regra.join(" ") }));
@@ -4346,7 +4381,9 @@ $("semana").addEventListener("change", () => { const w = parseInt($("semana").va
 $("rodar").addEventListener("click", rodar);
 $("rodarMeus").addEventListener("click", rodarMeus);
 $("rodarPessoal").addEventListener("click", rodarPessoal);
-$("tankBox").addEventListener("toggle", () => { if ($("tankBox").open) carregarLigasTank(false); });
+$("tankBox").addEventListener("toggle", () => { if ($("tankBox").open) { carregarLigasTank(false); montarSemanasTank(); conferirSemana().then(montarSemanasTank).catch(() => {}); } });
+$("tankTodas").addEventListener("click", () => { const W = semanaAtualTank(); TANK.sel = new Set(Array.from({ length: W }, (_, i) => i + 1)); TANK.selAte = W; montarSemanasTank(); });
+$("tankUltima").addEventListener("click", () => { const W = semanaAtualTank(); TANK.sel = new Set([W]); TANK.selAte = W; montarSemanasTank(); });
 $("rodarTank").addEventListener("click", rodarTank);
 $("rodarContender").addEventListener("click", rodarContender);
 $("cBusca").addEventListener("keydown", (e) => { if (e.key === "Enter") rodarContender(); });
