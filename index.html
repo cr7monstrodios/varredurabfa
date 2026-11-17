@@ -249,7 +249,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <label class="op"><input id="pFranq" type="checkbox" checked> <span>Conferir as franchises nas minhas ligas franchise (a lista fica em "Minhas ligas franchise", no fim do resultado)</span></label>
       <label class="op"><input id="pBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
         <select id="pMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="pMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
-      <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver (até 3 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
+      <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver (até 6 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
         os melhores da <b>última semana</b>, a melhor média da <b>temporada</b> e quem está com o <b>snap subindo</b> (pelo menos
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
         dos snaps no último jogo, crescendo 15 pontos ou mais nos últimos 3)</span></label>
@@ -310,7 +310,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 15/11/2026 b (quem já entrou em campo e se machucou no jogo não é acusado)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 (QB de bye em liga de 32 não é irregular; reserva forte sem QB em liga de 32; waiver com 6 nomes)</p>
 </div>
 
 <script>
@@ -616,7 +616,7 @@ function avaliarLiga(liga, dados, ctx) {
     let banco = [], reservas = [];
     if (ctx.banco && dados.medias) {
       const noEscopo = p => ctx.modo === "early" ? (ctx.cal[p.team] || "normal") === "early" : (ctx.cal[p.team] || "normal") !== "early";
-      reservas = sugestoesBanco(r, titulares, ctx, dados.medias, noEscopo, sig, Math.max(0, validos - liga.min), league && league.roster_positions);
+      reservas = sugestoesBanco(r, titulares, { ...ctx, liga32: rosters.length >= 32 }, dados.medias, noEscopo, sig, Math.max(0, validos - liga.min), league && league.roster_positions);
       banco = reservas.map(x => x.txt);
     }
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
@@ -993,7 +993,7 @@ async function rodarMeus() {
             if (falhas.length) { resultado.semMedias.push(lg.name); resultado.erroMedias = falhas[0]; }
             const medias = mediasDaLiga(ant.map(x => x || []));
             const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
-            sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+            sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32 }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
           resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, camp });
         }
@@ -1248,7 +1248,7 @@ async function rodarPessoal() {
           if (falhas.length) { res.semMedias.push(lg.name); res.erroMedias = falhas[0]; }
           const medias = mediasDaLiga(ant.map(x => x || []));
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
-          sugestoesBanco(meu, titulares, ctx, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32 }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv, camp });
@@ -1301,7 +1301,7 @@ function desenharPessoal(r) {
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb,
     st.res.tank ? (() => { const b = el("button", { class: "btn ghost", type: "button" }, "Ver caça ao tank"); b.addEventListener("click", () => { st.vistaPessoal = "tank"; redesenhar(); }); return b; })() : null));
   if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga, sem QB, K e DEF; nas ligas de cap só aparece se o seu elenco tiver vaga): " +
-    { semana: "os 3 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
+    { semana: "os 6 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
       snap: "livres com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo 15 pontos ou mais nas semanas " + r.waiver.semanas.join(", ") + ", pela média desses jogos." }[modoWaiver()] }));
   if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "A waiver ficou de fora: não consegui ler as estatísticas (" + r.waiver.erro + "). " + DICA_LIMITE }));
   if (r.semMedias && r.semMedias.length) box.appendChild(el("p", { class: "status err", text: "As reservas fortes ficaram de fora em " + r.semMedias.length + (r.semMedias.length > 1 ? " ligas" : " liga") +
@@ -1460,7 +1460,7 @@ async function rodarTank() {
           if (semana > 1) {
             const noEscopo = p => !(ctx.ignorarAntecipados && (calAgora[p.team] || "normal") === "early");
             const folga = folgaDe(tit, sig, i => { const x = ctx.statusDe(i, players[i]); return !x || x === "Questionable"; });
-            sugestoesBanco(r, tit, ctx, mediasAte(semana), noEscopo, sig, folga, rp)
+            sugestoesBanco(r, tit, { ...ctx, liga32 }, mediasAte(semana), noEscopo, sig, folga, rp)
               .forEach(x => t.agora.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
         }
@@ -1500,7 +1500,7 @@ async function rodarTank() {
         });
         semJogoAntes = semJogo;
         if (mostra && w > 1) {
-          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", ...margens };
+          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, ...margens };
           const folga = folgaDe(tit, sig, i => jogouNaSemana(S, i, players[i], cal));
           const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasAte(w), () => true, sig, folga, rp);
           // quanto o reserva fez naquela semana (e o titular que ficou no lugar dele)
@@ -2235,7 +2235,7 @@ function livresDaLiga(league, rosters, players) {
 }
 // as três leituras da waiver de uma liga (pontuação da própria liga):
 // semana = pontos na última semana; temporada = média por jogo (com pelo menos metade dos jogos); snap = snap subindo
-function opcoesWaiver(base, league, rosters, players, max = 3) {
+function opcoesWaiver(base, league, rosters, players, max = 6) {
   if (!league) return null;
   const livre = livresDaLiga(league, rosters, players), sc = league.scoring_settings || {};
   const top = arr => arr.sort((a, b) => b.valor - a.valor).slice(0, max).map(x => ({ nome: nomePosTime(x.p), valor: x.valor, jogos: x.jogos }));
@@ -2284,8 +2284,10 @@ function mediasDaLiga(semanasMatchups) {
 function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp = null) {
   // diferença mínima de média: 3 no ataque e 5 na defesa (IDP), a não ser que se escolha outra
   const margemDe = (slot, pS) => (slot ? SLOTS_IDP.has(slot) : ehIdp(pS)) ? (ctx.margemDefesa ?? ctx.margemBanco ?? 5) : (ctx.margemAtaque ?? ctx.margemBanco ?? 3);
+  const semQB = !!ctx.liga32;   // liga de 32 times: troca de QB não entra (pula para a próxima)
   const aptos = bancoDoTime(r, titulares).filter(id => {
     const p = ctx.players[id]; if (!p || !p.team || !noEscopo(p)) return false;
+    if (semQB && posDe(p).includes("QB")) return false;
     if ((ctx.cal[p.team] || "normal") === "bye") return false;
     const s = ctx.statusDe(id, p); if (s && s !== "Questionable") return false;
     return medias[id] != null;
@@ -2298,6 +2300,7 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     if (!sId || sId === "0") continue;
     const slot = rp && rp[i];   // o reserva tem que poder entrar na vaga do titular (um LB não entra na vaga de DL)
     const pS = ctx.players[sId]; if (!pS || !pS.team || !noEscopo(pS) || medias[sId] == null) continue;
+    if (semQB && posDe(pS).includes("QB")) continue;
     if ((ctx.cal[pS.team] || "normal") === "bye") continue;
     const sS = ctx.statusDe(sId, pS); if (sS && sS !== "Questionable") continue;
     const margem = margemDe(slot, pS);
@@ -3870,11 +3873,14 @@ function avaliarTerca(liga, dados, ctx) {
       if (s && s !== "Questionable" && !(wo && p.team === sig))
         naoJogou.push({ i, slot, id, p, txt: (p.team === sig ? "FRANCHISE " : "TITULAR ") + nomePosTime(p) + " ESTAVA " + (NAO_CONTA[s] || String(s).toUpperCase()) + " NA VARREDURA" });
     });
-    // 1) sem QB: nenhum QB titular jogou numa liga que tem vaga de QB (grave mesmo sem QB no banco e mesmo de bye em liga de 32)
+    // 1) sem QB: nenhum QB titular jogou numa liga que tem vaga de QB (grave mesmo sem QB no banco).
+    //    Em liga de 32 times, QB de bye não é irregular: todo time tem o seu QB de bye em alguma rodada.
     let grave = false;
-    if (rp.slice(0, titulares.length).includes("QB") && !titulares.some(id => id && id !== "0" && ctx.players[id] && ehQB(ctx.players[id]) && jogaria(id, ctx.players[id]))) {
+    const naVagaQB = naoJogou.filter(x => x.slot === "QB");
+    const soByeEm32 = rosters.length >= 32 && naVagaQB.length > 0 && naVagaQB.every(x => x.isento);
+    if (!soByeEm32 && rp.slice(0, titulares.length).includes("QB") && !titulares.some(id => id && id !== "0" && ctx.players[id] && ehQB(ctx.players[id]) && jogaria(id, ctx.players[id]))) {
       grave = true;
-      const naVaga = naoJogou.filter(x => x.slot === "QB");
+      const naVaga = naVagaQB;
       naVaga.forEach(x => { x.feito = true; });
       const ops = opcoesPara("QB"); if (ops.length) usadosB.add(ops[0]);
       alertas.push("🚨 JOGOU SEM QB (POSIÇÃO PREMIUM, DELITO GRAVE): " + (naVaga.length ? juntar(naVaga.map(x => x.txt)) : "NENHUM QB TITULAR JOGOU") +
