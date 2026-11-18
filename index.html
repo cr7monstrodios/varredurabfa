@@ -310,7 +310,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 (QB de bye em liga de 32 não é irregular; reserva forte sem QB em liga de 32; waiver com 6 nomes)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 b (terça: campanha de cada time no W.O. e na análise)</p>
 </div>
 
 <script>
@@ -3928,14 +3928,16 @@ function avaliarTerca(liga, dados, ctx) {
     if (formacao && !formacao.ok) alertas.push(descFormacao(formacao));
     const avisado = (ctx.flags[liga.id] || []).includes(f);
     const nWO = numeroOcorrencia(liga.nome, f, "WO", ctx.semana), nEI = numeroOcorrencia(liga.nome, f, "Escalação irregular", ctx.semana);
-    times.push({ franquia: f, gm: u.display_name || "?", validos, jogadores: daFranquia, bye, wo, avisado, alertas, descartados, grave, nWO, nEI, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte });
+    times.push({ franquia: f, gm: u.display_name || "?", camp: campanhaDe(rosters, r), validos, jogadores: daFranquia, bye, wo, avisado, alertas, descartados, grave, nWO, nEI, formacao, titulares, foraFormacao: !!(formacao && !formacao.ok), reservaForte });
   }
   times.sort((a, b) => a.gm.localeCompare(b.gm, "pt-BR", { sensitivity: "base" }));
   return { liga, times, avisos, terca: true };
 }
-function fraseWO(t) {
+// "@gm (Franquia, 2-8 · 30º de 32)": campanha junto do time, para os comissários (não vai na mensagem do grupo)
+const quemTerca = (t, comCampanha) => "@" + t.gm + " (" + t.franquia + (comCampanha && t.camp ? ", " + txtCampanha(t.camp) : "") + ")";
+function fraseWO(t, comCampanha = false) {
   const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
-  return "@" + t.gm + " (" + t.franquia + ") FICOU COM " + t.validos + " FRANCHISES" + (ruins.length ? " POIS " + juntar(ruins) + " NA VARREDURA" : " ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") +
+  return quemTerca(t, comCampanha) + " FICOU COM " + t.validos + " FRANCHISES" + (ruins.length ? " POIS " + juntar(ruins) + " NA VARREDURA" : " ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") +
     (t.nWO ? " · " + txtNumWO(t.nWO) : "");
 }
 // escalações irregulares marcadas pelos comissários na terça (guardadas neste aparelho, por semana)
@@ -3966,7 +3968,7 @@ function textoAlertas(resultados, ctx, titulo) {
     const ts = r.times.filter(t => (t.alertas && t.alertas.length) || (t.banco && t.banco.length)).sort((a, b) => (b.grave ? 1 : 0) - (a.grave ? 1 : 0));
     if (!ts.length) continue; algum = true;
     linhas.push("", "*" + r.liga.nome.toUpperCase() + "*");
-    ts.forEach(t => linhas.push("• " + (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar([...(t.alertas || []), ...(t.banco || [])])));
+    ts.forEach(t => linhas.push("• " + (t.reservaForte ? "🔍 " : "") + quemTerca(t, true) + ": " + juntar([...(t.alertas || []), ...(t.banco || [])])));
   }
   if (!algum) linhas.push("", "Nada para analisar.");
   return linhas.join("\n");
@@ -4063,7 +4065,7 @@ function desenharTerca(resultados, ctx) {
     const body = el("div", { class: "card-b" });
     if (r.erro) body.appendChild(el("div", { class: "status err", text: r.erro }));
     if (r.avisos && r.avisos.length) body.appendChild(el("div", { class: "status err", text: "Não identifiquei a franquia de: " + r.avisos.join(", ") + "." }));
-    if (wo.length) { const ul = el("ul", { class: "lst" }); wo.forEach(t => ul.appendChild(el("li", { class: "wo" }, fraseWO(t)))); body.appendChild(ul); }
+    if (wo.length) { const ul = el("ul", { class: "lst" }); wo.forEach(t => ul.appendChild(el("li", { class: "wo" }, fraseWO(t, true)))); body.appendChild(ul); }
     else if (!r.erro) body.appendChild(el("div", { class: "pill ok", text: "Nenhum W.O." }));
     if (al.length) {
       body.appendChild(el("div", { class: "foot", text: "Para análise (só comissários): marque \"irregular\" em quem se enquadra; entra na mensagem de W.O. e no Registro" }));
@@ -4078,12 +4080,12 @@ function desenharTerca(resultados, ctx) {
         });
         ul2.appendChild(el("li", { class: marcada || t.grave ? "wo" : t.reservaForte ? "warn" : "info" },
           el("label", { class: "marca" }, cb, el("span", { text: "irregular" })),
-          (t.reservaForte ? "🔍 " : "") + "@" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas) + (t.nEI ? " · " + (marcada ? "" : "SERIA A ") + txtNumEI(t.nEI) : "")));
+          (t.reservaForte ? "🔍 " : "") + quemTerca(t, true) + ": " + juntar(t.alertas) + (t.nEI ? " · " + (marcada ? "" : "SERIA A ") + txtNumEI(t.nEI) : "")));
       });
       body.appendChild(ul2);
     }
     if (desc.length) body.appendChild(el("div", { class: "foot", text: "Não entram na análise (sem opção no banco, ou reserva que não pontuou perto da média ou não fez mais que o titular): " +
-      desc.map(t => "@" + t.gm + " (" + t.franquia + "): " + juntar(t.descartados)).join("; ") + "." }));
+      desc.map(t => quemTerca(t, true) + ": " + juntar(t.descartados)).join("; ") + "." }));
     if (r.liga.formacao && r.times.length) body.appendChild(blocoFormacao(r));
     box.appendChild(el("article", { class: "card" },
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }),
