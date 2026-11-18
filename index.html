@@ -310,7 +310,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 b (terça: campanha de cada time no W.O. e na análise)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 c (terça: W.O. e escalação irregular em frases, sem caixa alta)</p>
 </div>
 
 <script>
@@ -3818,10 +3818,18 @@ function numeroOcorrencia(ligaNome, time, tipo, semana) {
   const doAnterior = ant.filter(r => r[4] === "GM trocado").length;
   return ant.length - doAnterior + (K === "wo" ? Math.min(1, doAnterior) : 0) + 1;
 }
-// Regra 4 (escada de W.O.), a mesma da coluna "Regra 4" do Registro
-const ESCADA_WO = ["DERROTA DA PARTIDA", "PERDE A ESCOLHA DA 3ª RODADA", "PERDE A ESCOLHA DA 2ª RODADA", "PERDE A ESCOLHA DA 1ª RODADA", "EXCLUSÃO DA LIGA"];
-const txtNumWO = n => n + "º W.O. (" + ESCADA_WO[Math.min(n, 5) - 1] + ")";
-const txtNumEI = n => n + "ª ESCALAÇÃO IRREGULAR";
+
+// ---------------------------------------------------------------- terça: textos em frases (sem caixa alta)
+const nomeNatural = p => p ? ((((p.first_name || "") + " " + (p.last_name || "")).trim()) || nomeDe(p)) : "?";
+const quemN = (p, extra) => nomeNatural(p) + " (" + [posDe(p).join("/") || (p && p.position) || "", (p && p.team) || "sem time", extra || ""].filter(Boolean).join(", ") + ")";
+const SITUACAO_N = { Out: "OUT", IR: "em IR", Doubtful: "Doubtful", Sus: "suspenso", NA: "inativo (NA)", DNR: "fora (DNR)", PUP: "no PUP", COV: "fora (COV)" };
+const situacaoN = s => SITUACAO_N[s] || String(s);
+const maiuscula = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+const juntarN = a => a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " e " + a[a.length - 1];
+const ESCADA_WO_N = ["derrota da partida", "perde a escolha da 3ª rodada", "perde a escolha da 2ª rodada", "perde a escolha da 1ª rodada", "exclusão da liga"];
+const fraseNumWO = n => "É o " + n + "º W.O. do time (" + ESCADA_WO_N[Math.min(n, 5) - 1] + ").";
+const fraseNumEI = (n, seria) => (seria ? "Seria a " : "É a ") + n + "ª escalação irregular do time.";
+const emFrases = a => a.join(" ");
 
 // ---------------------------------------------------------------- terça: conferência de W.O.
 const PERTO_DA_MEDIA = 0.8;   // reserva forte que ficou no banco só conta se fez pelo menos 80% da média usada na varredura
@@ -3838,7 +3846,7 @@ function avaliarTerca(liga, dados, ctx) {
     const bye = (ctx.cal[sig] || "normal") === "bye";
     const daFranquia = titulares.filter(id => ctx.players[id] && ctx.players[id].team === sig).map(id => {
       const p = ctx.players[id]; const s = ctx.statusDe(id, p);
-      return { id, nome: nomeDe(p), status: s, conta: !s || s === "Questionable" };
+      return { id, nome: nomeDe(p), nomeN: quemN(p), status: s, conta: !s || s === "Questionable" };
     });
     const validos = daFranquia.filter(j => j.conta).length;
     const wo = !bye && validos < liga.min;
@@ -3857,21 +3865,24 @@ function avaliarTerca(liga, dados, ctx) {
     const usadosB = new Set();
     const opcoesPara = (slot, pT) => banco.filter(b => !usadosB.has(b) && aptoBanco(b) && (slot ? cabeNoSlot(ctx.players[b], slot) : !pT || mesmaPosicao(ctx.players[b], pT)))
       .sort((a, b) => (pts(b) || 0) - (pts(a) || 0));
-    const txtOp = ids => juntar(ids.slice(0, 2).map(b => nomePosTime(ctx.players[b]) + (pts(b) != null ? " FEZ " + num(pts(b)) : "")));
+    // opções do banco: "Tommy Tremble (TE, CAR, fez 9,8) ou Feleipe Franks (TE, ATL, fez 2,0)"
+    const txtOp = ids => { const dois = ids.slice(0, 2).filter((b, i) => !i || (pts(b) || 0) > 0);   // a 2ª opção só se pontuou
+      return dois.map(b => quemN(ctx.players[b], pts(b) != null ? "fez " + num(pts(b)) : "")).join(" ou "); };
     const ehQB = p => posDe(p).includes("QB");
     const jogaria = (id, p) => { if (!p || !p.team || (ctx.cal[p.team] || "normal") === "bye") return false; const s = ctx.statusDe(id, p); return !s || s === "Questionable"; };
-    // titulares que não jogaram
+    // titulares que não jogaram (cada um vira o começo de uma frase)
     const naoJogou = [];
     titulares.forEach((id, i) => {
       const slot = rp[i];
-      if (!id || id === "0") { naoJogou.push({ i, slot, txt: "SPOT VAZIO" + (slot ? " (" + (SLOT_NOME[slot] || slot) + ")" : "") }); return; }
+      if (!id || id === "0") { naoJogou.push({ i, slot, vazio: true, txt: "a vaga de " + (slot ? (SLOT_NOME[slot] || slot) : "titular") + " ficou vazia" }); return; }
       const p = ctx.players[id]; if (!p) return;
       const est = p.team ? (ctx.cal[p.team] || "normal") : "semtime";
-      if (est === "semtime") { naoJogou.push({ i, slot, id, p, txt: "TITULAR " + nomePosTime(p) + " ESTAVA SEM TIME" }); return; }
-      if (est === "bye") { naoJogou.push({ i, slot, id, p, txt: "TITULAR " + nomePosTime(p) + " ESTAVA DE BYE", isento: rosters.length >= 32 && ehQbOuK(p) }); return; }
+      const quem = (p.team && p.team === sig ? "o franchise " : "") + quemN(p);
+      if (est === "semtime") { naoJogou.push({ i, slot, id, p, txt: quem + " estava sem time" }); return; }
+      if (est === "bye") { naoJogou.push({ i, slot, id, p, txt: quem + " estava de bye", isento: rosters.length >= 32 && ehQbOuK(p) }); return; }
       const s = ctx.statusDe(id, p);
       if (s && s !== "Questionable" && !(wo && p.team === sig))
-        naoJogou.push({ i, slot, id, p, txt: (p.team === sig ? "FRANCHISE " : "TITULAR ") + nomePosTime(p) + " ESTAVA " + (NAO_CONTA[s] || String(s).toUpperCase()) + " NA VARREDURA" });
+        naoJogou.push({ i, slot, id, p, txt: quem + " estava " + situacaoN(s) + " na varredura" });
     });
     // 1) sem QB: nenhum QB titular jogou numa liga que tem vaga de QB (grave mesmo sem QB no banco).
     //    Em liga de 32 times, QB de bye não é irregular: todo time tem o seu QB de bye em alguma rodada.
@@ -3883,14 +3894,14 @@ function avaliarTerca(liga, dados, ctx) {
       const naVaga = naVagaQB;
       naVaga.forEach(x => { x.feito = true; });
       const ops = opcoesPara("QB"); if (ops.length) usadosB.add(ops[0]);
-      alertas.push("🚨 JOGOU SEM QB (POSIÇÃO PREMIUM, DELITO GRAVE): " + (naVaga.length ? juntar(naVaga.map(x => x.txt)) : "NENHUM QB TITULAR JOGOU") +
-        (ops.length ? " · NO BANCO: " + txtOp(ops) : " · SEM QB NO BANCO"));
+      alertas.push("🚨 Jogou sem QB, que é posição premium (delito grave): " + (naVaga.length ? juntarN(naVaga.map(x => x.txt)) : "nenhum QB titular entrou em campo") +
+        (ops.length ? ", mesmo com " + txtOp(ops) + " no banco." : ", e não tinha QB no banco."));
     }
     // 3) quem não jogou: só conta com opção no banco para a vaga
     naoJogou.filter(x => !x.feito && !x.isento).forEach(x => {
       const ops = opcoesPara(x.slot, x.p);
-      if (ops.length) { usadosB.add(ops[0]); alertas.push(x.txt + " · NO BANCO: " + txtOp(ops)); }
-      else descartados.push(x.txt + " · SEM OPÇÃO NO BANCO");
+      if (ops.length) { usadosB.add(ops[0]); alertas.push(maiuscula(x.txt) + (x.vazio ? "" : " e ficou como titular") + ", mesmo com " + txtOp(ops) + " no banco."); }
+      else descartados.push(maiuscula(x.txt) + ", mas não tinha opção no banco.");
     });
     // 2) e 3) reservas fortes apontados na varredura oficial que continuaram no banco
     const doElenco = new Set([...(m.players || r.players || [])]);
@@ -3900,10 +3911,10 @@ function avaliarTerca(liga, dados, ctx) {
     const temPontos = !!(m.players_points && Object.keys(m.players_points).length);
     ficaram.forEach(x => {
       const pB = ctx.players[x.id]; const feitos = pts(x.id) || 0;
-      const quem = pB ? nomePosTime(pB) : x.nome;
+      const quem = pB ? quemN(pB) : x.nome;
       // sem os pontos da rodada no Sleeper não dá para conferir: fica o alerta, avisando
-      if (!temPontos) { reservaForte = true; alertas.push("RESERVA FORTE APONTADO NA VARREDURA FICOU NO BANCO: " + quem + " (MÉDIA " + num(x.media || 0) + "; SEM OS PONTOS DA RODADA NO SLEEPER PARA CONFERIR)"); return; }
-      if (!x.media || feitos < PERTO_DA_MEDIA * x.media) { descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", LONGE DA MÉDIA " + num(x.media || 0)); return; }
+      if (!temPontos) { reservaForte = true; alertas.push(quem + ", apontado na varredura como reserva forte (média " + num(x.media || 0) + "), ficou no banco; o Sleeper ainda não trouxe os pontos da rodada para conferir."); return; }
+      if (!x.media || feitos < PERTO_DA_MEDIA * x.media) { descartados.push("O reserva " + quem + " fez " + num(feitos) + ", longe da média de " + num(x.media || 0) + "."); return; }
       // o titular que ele substituiria: o apontado na varredura; se não houver (varredura antiga), o que menos pontuou numa vaga em que ele cabe e podia sair.
       // Franchise que, se saísse, deixaria o time abaixo do mínimo (W.O.) não podia sair, a não ser trocado por outro franchise do banco.
       const franqB = !!(pB && pB.team === sig);
@@ -3914,15 +3925,15 @@ function avaliarTerca(liga, dados, ctx) {
       const cand = x.tit && titulares.includes(x.tit) ? [x.tit] : naVaga;   // com o titular da varredura guardado, compara só com ele
       const tId = cand.find(podiaSair) || null;
       if (!tId) {
-        if (cand.length) descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", MAS O TITULAR " + nomePosTime(ctx.players[cand[0]]) + " É FRANCHISE E TIRAR DARIA W.O.");
+        if (cand.length) descartados.push("O reserva " + quem + " fez " + num(feitos) + ", mas o titular " + quemN(ctx.players[cand[0]]) + " é franchise e tirá-lo daria W.O.");
         return;
       }
       const pT = ctx.players[tId], fT = pts(tId) || 0;
-      if (feitos <= fT) { descartados.push("RESERVA " + quem + " FEZ " + num(feitos) + ", NÃO MAIS QUE O TITULAR " + nomePosTime(pT) + " (" + num(fT) + ")"); return; }
+      if (feitos <= fT) { descartados.push("O reserva " + quem + " fez " + num(feitos) + ", não mais que o titular " + quemN(pT) + ", que fez " + num(fT) + "."); return; }
       const entreFranchises = franqB && pT && pT.team === sig;
       reservaForte = true;
-      alertas.push("RESERVA FORTE FICOU NO BANCO: " + (franqB ? "FRANCHISE " : "") + quem + " FEZ " + num(feitos) + " (MÉDIA " + num(x.media) + ") > TITULAR " + (pT && pT.team === sig ? "FRANCHISE " : "") + nomePosTime(pT) + " FEZ " + num(fT) +
-        (entreFranchises ? " (TROCA ENTRE FRANCHISES, SEM RISCO DE W.O.)" : ""));
+      alertas.push((franqB ? "O franchise " : "") + (franqB ? quem : maiuscula(quem)) + ", com média " + num(x.media) + ", ficou no banco e fez " + num(feitos) + ", mais que " +
+        (pT && pT.team === sig ? "o franchise " : "o titular ") + quemN(pT) + ", que fez " + num(fT) + "." + (entreFranchises ? " A troca era entre franchises, sem risco de W.O." : ""));
     });
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
     if (formacao && !formacao.ok) alertas.push(descFormacao(formacao));
@@ -3935,10 +3946,13 @@ function avaliarTerca(liga, dados, ctx) {
 }
 // "@gm (Franquia, 2-8 · 30º de 32)": campanha junto do time, para os comissários (não vai na mensagem do grupo)
 const quemTerca = (t, comCampanha) => "@" + t.gm + " (" + t.franquia + (comCampanha && t.camp ? ", " + txtCampanha(t.camp) : "") + ")";
-function fraseWO(t, comCampanha = false) {
-  const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
-  return quemTerca(t, comCampanha) + " FICOU COM " + t.validos + " FRANCHISES" + (ruins.length ? " POIS " + juntar(ruins) + " NA VARREDURA" : " ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") +
-    (t.nWO ? " · " + txtNumWO(t.nWO) : "");
+function fraseWO(t, comCampanha = false, min = null) {
+  // agrupa por situação: "Michael Wilson (WR, ARI) e Andrew Wingard (DB, ARI) estavam em IR"
+  const porSit = {}; t.jogadores.filter(j => !j.conta).forEach(j => { (porSit[j.status] = porSit[j.status] || []).push(j.nomeN || j.nome); });
+  const ruins = Object.entries(porSit).map(([st, ns]) => juntarN(ns) + (ns.length > 1 ? " estavam " : " estava ") + situacaoN(st));
+  const n = t.validos + " franchise" + (t.validos === 1 ? "" : "s"), abaixo = min ? ", abaixo do mínimo de " + min : "";
+  return quemTerca(t, comCampanha) + (ruins.length ? " ficou com " + n + abaixo + ", porque " + juntarN(ruins) + " na varredura." : " escalou só " + n + abaixo + ".") +
+    (t.avisado ? " Foi avisado na varredura." : "") + (t.nWO ? " " + fraseNumWO(t.nWO) : "");
 }
 // escalações irregulares marcadas pelos comissários na terça (guardadas neste aparelho, por semana)
 const chaveIrr = semana => "bfa-irr-" + temporadaAtual() + "-" + semana;
@@ -3952,10 +3966,10 @@ const irregularesDa = (res, ctx) => res.times.filter(t => t.alertas && t.alertas
 function mensagemWO(res, ctx) {
   const L = res.liga; const wo = res.times.filter(t => t.wo); const irr = irregularesDa(res, ctx);
   const linhas = ["*W.O. SEMANA " + ctx.semana + " — " + L.nome.toUpperCase() + "* (mínimo " + L.min + " franchises)", ""];
-  if (wo.length) { linhas.push("❌ W.O.:"); wo.forEach(t => linhas.push("• " + fraseWO(t))); }
+  if (wo.length) { linhas.push("❌ W.O.:"); wo.forEach(t => linhas.push("• " + fraseWO(t, false, L.min))); }
   else linhas.push("✅ Nenhum W.O. nesta semana.");
   linhas.push("");
-  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + juntar(t.alertas) + (t.nEI ? " · " + txtNumEI(t.nEI) : ""))); linhas.push(""); }
+  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + emFrases(t.alertas) + (t.nEI ? " " + fraseNumEI(t.nEI) : ""))); linhas.push(""); }
   const bye = res.times.filter(t => t.bye).map(t => t.franquia).sort();
   if (bye.length) linhas.push("Bye (isentos): " + bye.join(", "));
   linhas.push("Conferência feita em " + ctx.quando);
@@ -3968,7 +3982,7 @@ function textoAlertas(resultados, ctx, titulo) {
     const ts = r.times.filter(t => (t.alertas && t.alertas.length) || (t.banco && t.banco.length)).sort((a, b) => (b.grave ? 1 : 0) - (a.grave ? 1 : 0));
     if (!ts.length) continue; algum = true;
     linhas.push("", "*" + r.liga.nome.toUpperCase() + "*");
-    ts.forEach(t => linhas.push("• " + (t.reservaForte ? "🔍 " : "") + quemTerca(t, true) + ": " + juntar([...(t.alertas || []), ...(t.banco || [])])));
+    ts.forEach(t => linhas.push("• " + (t.reservaForte ? "🔍 " : "") + quemTerca(t, true) + ": " + (r.terca ? emFrases(t.alertas || []) : juntar([...(t.alertas || []), ...(t.banco || [])]))));
   }
   if (!algum) linhas.push("", "Nada para analisar.");
   return linhas.join("\n");
@@ -3982,7 +3996,7 @@ function linhasLancar(resultados, ctx) {
       detalhe: (ruins.length ? juntar(ruins) + " NA VARREDURA" : t.validos + " FRANCHISES ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") });
   }
   if (ctx) for (const r of resultados) for (const t of irregularesDa(r, ctx))
-    out.push({ liga: r.liga.nome, time: t.franquia, tipo: "Escalação irregular", gm: t.gm, detalhe: juntar(t.alertas) });
+    out.push({ liga: r.liga.nome, time: t.franquia, tipo: "Escalação irregular", gm: t.gm, detalhe: emFrases(t.alertas) });
   return out;
 }
 function rotuloLancar(linhas) {
@@ -4065,7 +4079,7 @@ function desenharTerca(resultados, ctx) {
     const body = el("div", { class: "card-b" });
     if (r.erro) body.appendChild(el("div", { class: "status err", text: r.erro }));
     if (r.avisos && r.avisos.length) body.appendChild(el("div", { class: "status err", text: "Não identifiquei a franquia de: " + r.avisos.join(", ") + "." }));
-    if (wo.length) { const ul = el("ul", { class: "lst" }); wo.forEach(t => ul.appendChild(el("li", { class: "wo" }, fraseWO(t, true)))); body.appendChild(ul); }
+    if (wo.length) { const ul = el("ul", { class: "lst" }); wo.forEach(t => ul.appendChild(el("li", { class: "wo" }, fraseWO(t, true, r.liga.min)))); body.appendChild(ul); }
     else if (!r.erro) body.appendChild(el("div", { class: "pill ok", text: "Nenhum W.O." }));
     if (al.length) {
       body.appendChild(el("div", { class: "foot", text: "Para análise (só comissários): marque \"irregular\" em quem se enquadra; entra na mensagem de W.O. e no Registro" }));
@@ -4080,12 +4094,12 @@ function desenharTerca(resultados, ctx) {
         });
         ul2.appendChild(el("li", { class: marcada || t.grave ? "wo" : t.reservaForte ? "warn" : "info" },
           el("label", { class: "marca" }, cb, el("span", { text: "irregular" })),
-          (t.reservaForte ? "🔍 " : "") + quemTerca(t, true) + ": " + juntar(t.alertas) + (t.nEI ? " · " + (marcada ? "" : "SERIA A ") + txtNumEI(t.nEI) : "")));
+          (t.reservaForte ? "🔍 " : "") + quemTerca(t, true) + ": " + emFrases(t.alertas) + (t.nEI ? " " + fraseNumEI(t.nEI, !marcada) : "")));
       });
       body.appendChild(ul2);
     }
-    if (desc.length) body.appendChild(el("div", { class: "foot", text: "Não entram na análise (sem opção no banco, ou reserva que não pontuou perto da média ou não fez mais que o titular): " +
-      desc.map(t => quemTerca(t, true) + ": " + juntar(t.descartados)).join("; ") + "." }));
+    if (desc.length) body.appendChild(el("div", { class: "foot", text: "Não entram na análise (sem opção no banco, ou reserva que não pontuou perto da média ou não fez mais que o titular). " +
+      desc.map(t => quemTerca(t, true) + ": " + emFrases(t.descartados)).join(" ") }));
     if (r.liga.formacao && r.times.length) body.appendChild(blocoFormacao(r));
     box.appendChild(el("article", { class: "card" },
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }),
