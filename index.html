@@ -239,6 +239,10 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <label class="op"><input id="meusQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
       <label class="op"><input id="meusBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
         <select id="meusMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="meusMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
+      <label class="op"><input id="meusWaiver" type="checkbox" checked> <span>Garimpar a waiver em todas as ligas, mesmo nas sem problema (até 6 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
+        os melhores da <b>última semana</b>, a melhor média da <b>temporada</b> e quem está com o <b>snap subindo</b> (pelo menos
+        <select id="meusSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
+        dos snaps no último jogo)</span></label>
       <div class="toolbar">
         <button id="rodarMeus" class="btn" type="button">Verificar times</button>
         <span id="statusMeus" class="status" role="status" aria-live="polite"></span>
@@ -310,7 +314,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 f (semanas 9 e 10 no histórico; botão da planilha separado do da mensagem do grupo)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 g (waiver também em Meus times, inclusive nas ligas sem problema)</p>
 </div>
 
 <script>
@@ -932,12 +936,14 @@ async function rodarMeus() {
     const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
     const players = await carregarJogadores(status);
     const banco = $("meusBanco").checked;
+    const waiver = $("meusWaiver").checked ? { limiar: parseInt($("meusSnap").value, 10) || 30 } : null;
+    const base = waiver ? await baseDaWaiver(temporada, semana, players, waiver, status) : null;
     const Ssem = await statsDaSemana(temporada, semana).catch(() => null);   // quem já entrou em campo nesta semana
     const ctxG = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("meusMargemA").value, 10) || 3, margemDefesa: parseInt($("meusMargemD").value, 10) || 5 };
     const { cfg } = configMinhas(ativas);
     const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
-      banco, semMedias: [], erroMedias: null };
+      banco, waiver, semMedias: [], erroMedias: null };
     let feitas = 0;
     await emLotes(ativas, banco ? 5 : 6, async (lg) => {
       try {
@@ -995,7 +1001,9 @@ async function rodarMeus() {
             const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
             sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32 }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
-          resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, camp });
+          const cap = ligaCap(lg.name);
+          const wv = base && base.semanas.length && (!cap || temVagaNoElenco(meu, league)) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
+          resultado.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, camp, waiver: wv });
         }
       } catch (e) { resultado.erros.push(lg.name); }
       feitas++; status("Lendo ligas… " + feitas + "/" + ativas.length);
@@ -1017,6 +1025,8 @@ function textoMeus(r) {
   if (!com.length) linhas.push("✅ Nenhum problema nas escalações.");
   com.forEach(l => linhas.push("• " + l.nome + ": " + juntar(problemas(l).map(i => i.txt))));
   if (r.semMedias && r.semMedias.length) linhas.push("⚠️ Reservas fortes de fora em: " + r.semMedias.join(", ") + ".");
+  if (r.waiver && r.waiver.erro) linhas.push("⚠️ Waiver de fora (não consegui ler as estatísticas).");
+  linhas.push(...linhasWaiverTexto(r));
   linhas.push("", "Verificado em " + r.quando + " (" + r.ligas.length + " ligas)");
   return linhas.join("\n");
 }
@@ -1036,7 +1046,9 @@ function desenharMeus(r) {
     el("span", { class: "pill " + (com.length ? "wo" : "ok"), text: com.length + " de " + r.ligas.length + " ligas com problema" }),
     r.ligas.some(l => l.fr && l.fr.min) ? el("span", { class: "pill " + (r.ligas.some(l => l.itens.some(i => i.abaixo)) ? "wo" : "ok"), text: r.ligas.filter(l => l.itens.some(i => i.abaixo)).length + " abaixo do mínimo de franchises" }) : null,
     r.banco ? el("span", { class: "pill warn", text: "🔍 " + r.ligas.filter(l => l.itens.some(i => i.banco)).length + " com reserva forte no banco" }) : null,
+    r.waiver ? el("span", { class: "pill info", text: "💡 " + r.ligas.filter(l => linhaWaiver(l, r)).length + " com dica de waiver" }) : null, seletorWaiver(r, () => desenharMeus(r)),
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb));
+  notaWaiver(r).forEach(p => box.appendChild(p));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
   if (r.semMedias && r.semMedias.length) box.appendChild(el("p", { class: "status err", text: "As reservas fortes ficaram de fora em " + r.semMedias.length + (r.semMedias.length > 1 ? " ligas" : " liga") +
     " porque não consegui ler as rodadas anteriores (" + r.erroMedias + "): " + r.semMedias.join(", ") + ". " + DICA_LIMITE }));
@@ -1052,15 +1064,17 @@ function desenharMeus(r) {
   cb.addEventListener("change", () => { st.meusSoProblema = cb.checked; desenharMeus(r); });
   filtroBox.appendChild(cb); filtroBox.appendChild(el("span", { text: "Mostrar só as ligas com problema" }));
   box.appendChild(filtroBox);
+  const escondidas = [];
   for (const l of r.ligas) {
     const np = problemas(l).filter(i => !i.banco).length, nb = l.itens.filter(i => i.banco).length;
-    const frTxt = textoFranquiaLiga(l);
-    if (!l.itens.length || (soProblema && !np && !nb)) {
+    const frTxt = textoFranquiaLiga(l), its = itensComWaiver(l, r);   // a waiver aparece mesmo quando o time está sem problema
+    if (!its.length || (soProblema && !np && !nb)) {
       if (!soProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || l.nota || "sem problema" })));
+      else escondidas.push(l);
       continue;
     }
     const ul = el("ul", { class: "lst" });
-    l.itens.forEach(i => {
+    its.forEach(i => {
       const li = el("li", { class: i.tipo || (/QUESTIONABLE$/.test(i.txt) ? "warn" : "wo") }, i.txt);
       if (i.pos) { li.appendChild(document.createTextNode(" ")); li.appendChild(el("span", { class: "pos", text: "(" + i.pos + ")" })); }
       ul.appendChild(li);
@@ -1072,6 +1086,18 @@ function desenharMeus(r) {
           frTxt ? el("span", { class: "foot", text: frTxt }) : null))),
       el("div", { class: "card-b" }, ul)));
   }
+  const bw = blocoWaiverEscondidas(escondidas, r); if (bw) box.appendChild(bw);
+}
+// com "Mostrar só as ligas com problema", as ligas sem problema somem, mas a waiver delas continua visível num bloco no fim
+function blocoWaiverEscondidas(ligas, r) {
+  const linhas = ligas.map(l => [l, linhaWaiver(l, r)]).filter(x => x[1]);
+  if (!linhas.length) return null;
+  const ul = el("ul", { class: "lst" });
+  linhas.forEach(([l, w]) => ul.appendChild(el("li", { class: "neutro" }, el("b", { text: l.nome + ": " }), w.txt.replace(/^💡 WAIVER · [^:]+: /, ""))));
+  return el("article", { class: "card" },
+    el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "💡 Waiver nas ligas sem problema" }),
+      el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "foot", text: linhas.length + (linhas.length > 1 ? " ligas escondidas" : " liga escondida") + " pelo filtro" })))),
+    el("div", { class: "card-b" }, ul));
 }
 
 // ---------------------------------------------------------------- meu painel (só do Trajano)
@@ -1152,6 +1178,19 @@ function franquiaDoMeuTime(lg, league, users, rosters, meu, c) {
   const hit = Object.keys(KEYS).filter(t => KEYS[t].some(k => tn.includes(k)));
   return hit.length === 1 ? hit[0] : null;
 }
+// estatísticas da temporada para garimpar a waiver (Meus times e Meu painel); preenche waiver.semanas/ultima ou waiver.erro
+async function baseDaWaiver(temporada, semana, players, waiver, status) {
+  status("Lendo as estatísticas da temporada (pontos e snaps)…");
+  try {
+    const ultima = Math.max(0, Math.min(18, ultimaSemanaCompleta(semana)));
+    const semanas = Array.from({ length: ultima }, (_, i) => i + 1);
+    const stats = await Promise.all(semanas.map(w => statsDaSemana(temporada, w)));
+    const ids = new Set(); stats.forEach(S => Object.keys(S || {}).forEach(id => ids.add(id)));
+    const cand = await candidatosWaiver(temporada, ultima + 1, players, waiver.limiar);
+    Object.assign(waiver, { semanas: cand.semanas, ultima: semanas[semanas.length - 1] || null, nSemanas: semanas.length });
+    return { semanas, stats, ids, cand };
+  } catch (e) { waiver.erro = e.message; return null; }
+}
 async function rodarPessoal() {
   const btn = $("rodarPessoal"); const status = (t, err) => { $("statusPessoal").textContent = t; $("statusPessoal").className = "status" + (err ? " err" : ""); };
   const usuario = $("usuarioP").value.trim();
@@ -1176,19 +1215,7 @@ async function rodarPessoal() {
     const { cfg, faltando } = configMinhas(ativas);
     const conferirFr = $("pFranq").checked, banco = $("pBanco").checked;
     const waiver = $("pWaiver").checked ? { limiar: parseInt($("pSnap").value, 10) || 30 } : null;
-    let base = null;
-    if (waiver) {
-      status("Lendo as estatísticas da temporada (pontos e snaps)…");
-      try {
-        const ultima = Math.max(0, Math.min(18, ultimaSemanaCompleta(semana)));
-        const semanas = Array.from({ length: ultima }, (_, i) => i + 1);
-        const stats = await Promise.all(semanas.map(w => statsDaSemana(temporada, w)));
-        const ids = new Set(); stats.forEach(S => Object.keys(S || {}).forEach(id => ids.add(id)));
-        const cand = await candidatosWaiver(temporada, ultima + 1, players, waiver.limiar);
-        base = { semanas, stats, ids, cand };
-        Object.assign(waiver, { semanas: cand.semanas, ultima: semanas[semanas.length - 1] || null, nSemanas: semanas.length });
-      } catch (e) { waiver.erro = e.message; }
-    }
+    const base = waiver ? await baseDaWaiver(temporada, semana, players, waiver, status) : null;
     const Ssem = await statsDaSemana(temporada, semana).catch(() => null);   // quem já entrou em campo nesta semana
     const ctxG = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
@@ -1272,8 +1299,7 @@ function textoPessoal(r) {
   if (r.waiver && r.waiver.erro) linhas.push("⚠️ Waiver de fora (não consegui ler as estatísticas).");
   if (r.semMedias && r.semMedias.length) linhas.push("⚠️ Reservas fortes de fora em: " + r.semMedias.join(", ") + ".");
   com.forEach(l => linhas.push("• " + l.nome + (l.camp ? " (" + recorde(l.camp) + ")" : "") + ": " + juntar(problemas(l).map(i => i.txt))));
-  const dicas = r.ligas.map(l => [l, linhaWaiver(l, r)]).filter(x => x[1]);
-  if (dicas.length) { linhas.push("", "💡 *NA WAIVER — " + MODOS_WAIVER.find(m => m[0] === modoWaiver())[1].toUpperCase() + "*"); dicas.forEach(([l, w]) => linhas.push("• " + l.nome + ": " + w.txt.replace(/^💡 WAIVER · [^:]+: /, ""))); }
+  linhas.push(...linhasWaiverTexto(r));
   linhas.push("", "Verificado em " + r.quando + " (" + r.ligas.length + " ligas)");
   return linhas.join("\n");
 }
@@ -1281,12 +1307,7 @@ function desenharPessoal(r) {
   const box = $("resultado"); box.textContent = "";
   const com = r.ligas.filter(l => problemas(l).length);
   const comWaiver = r.ligas.filter(l => linhaWaiver(l, r)).length;
-  let selW = null;
-  if (r.waiver && !r.waiver.erro) {
-    selW = el("select", { "aria-label": "O que mostrar na waiver", class: "selw" });
-    MODOS_WAIVER.forEach(([v, rot]) => { const o = el("option", { value: v }, rot); if (v === modoWaiver()) o.selected = true; selW.appendChild(o); });
-    selW.addEventListener("change", () => { st.waiverModo = selW.value; armazenar.set("bfa-waiver-modo", selW.value); desenharPessoal(r); });
-  }
+  const selW = seletorWaiver(r, () => desenharPessoal(r));
   const abaixo = r.ligas.filter(l => l.itens.some(i => i.abaixo)).length;
   const comBanco = r.ligas.filter(l => l.itens.some(i => i.banco)).length;
   const fb = el("span", { class: "copied" });
@@ -1300,10 +1321,7 @@ function desenharPessoal(r) {
     r.waiver ? el("span", { class: "pill info", text: "💡 " + comWaiver + " com dica de waiver" }) : null, selW,
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb,
     st.res.tank ? (() => { const b = el("button", { class: "btn ghost", type: "button" }, "Ver caça ao tank"); b.addEventListener("click", () => { st.vistaPessoal = "tank"; redesenhar(); }); return b; })() : null));
-  if (r.waiver && r.waiver.semanas) box.appendChild(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga, sem QB, K e DEF; nas ligas de cap só aparece se o seu elenco tiver vaga): " +
-    { semana: "os 6 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
-      snap: "livres com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo 15 pontos ou mais nas semanas " + r.waiver.semanas.join(", ") + ", pela média desses jogos." }[modoWaiver()] }));
-  if (r.waiver && r.waiver.erro) box.appendChild(el("p", { class: "status err", text: "A waiver ficou de fora: não consegui ler as estatísticas (" + r.waiver.erro + "). " + DICA_LIMITE }));
+  notaWaiver(r).forEach(p => box.appendChild(p));
   if (r.semMedias && r.semMedias.length) box.appendChild(el("p", { class: "status err", text: "As reservas fortes ficaram de fora em " + r.semMedias.length + (r.semMedias.length > 1 ? " ligas" : " liga") +
     " porque não consegui ler as rodadas anteriores (" + r.erroMedias + "): " + r.semMedias.join(", ") + ". " + DICA_LIMITE }));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
@@ -1319,11 +1337,13 @@ function desenharPessoal(r) {
   cb.addEventListener("change", () => { st.pessoalSoProblema = cb.checked; desenharPessoal(r); });
   filtroBox.appendChild(cb); filtroBox.appendChild(el("span", { text: "Mostrar só as ligas com problema" }));
   box.appendChild(filtroBox);
+  const escondidas = [];
   for (const l of r.ligas) {
     const frTxt = textoFranquiaLiga(l);
     const np = problemas(l).length, its = itensComWaiver(l, r);
     if (!its.length || (st.pessoalSoProblema && !np)) {
       if (!st.pessoalSoProblema) box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: l.nome }), el("span", { class: "foot", text: frTxt || "sem problema" })));
+      else escondidas.push(l);
       continue;
     }
     const ul = el("ul", { class: "lst" });
@@ -1338,6 +1358,7 @@ function desenharPessoal(r) {
           frTxt ? el("span", { class: "foot", text: frTxt }) : null))),
       el("div", { class: "card-b" }, ul)));
   }
+  const bw = blocoWaiverEscondidas(escondidas, r); if (bw) box.appendChild(bw);
   box.appendChild(blocoMinhas(r));
 }
 // ---------------------------------------------------------------- caçar tank numa liga (só no Meu painel)
@@ -2266,6 +2287,27 @@ function linhaWaiver(l, r) {
   return { tipo: "neutro", info: true, waiver: true, txt: "💡 WAIVER · " + rot + ": " + lst.map(x => x.nome + " " + num(x.valor) + (m === "temporada" ? " em " + x.jogos + " J" : "")).join(" · ") };
 }
 const itensComWaiver = (l, r) => { const w = linhaWaiver(l, r); return w ? l.itens.concat([w]) : l.itens; };
+// escolha do que mostrar na waiver (última semana, temporada ou snap), igual nas duas abas
+function seletorWaiver(r, redesenha) {
+  if (!r.waiver || r.waiver.erro) return null;
+  const sel = el("select", { "aria-label": "O que mostrar na waiver", class: "selw" });
+  MODOS_WAIVER.forEach(([v, rot]) => { const o = el("option", { value: v }, rot); if (v === modoWaiver()) o.selected = true; sel.appendChild(o); });
+  sel.addEventListener("change", () => { st.waiverModo = sel.value; armazenar.set("bfa-waiver-modo", sel.value); redesenha(); });
+  return sel;
+}
+function notaWaiver(r) {
+  const out = [];
+  if (r.waiver && r.waiver.semanas) out.push(el("p", { class: "foot", text: "Waiver (em branco, só análise, pontuação de cada liga, sem QB, K e DEF; aparece também nas ligas sem problema; nas ligas de cap só aparece se o elenco tiver vaga): " +
+    { semana: "os 6 livres que mais pontuaram na semana " + r.waiver.ultima + ".", temporada: "a melhor média por jogo nas semanas 1 a " + r.waiver.ultima + " (J = jogos, mínimo metade deles).",
+      snap: "livres com snap de pelo menos " + r.waiver.limiar + "% no último jogo e crescendo 15 pontos ou mais nas semanas " + r.waiver.semanas.join(", ") + ", pela média desses jogos." }[modoWaiver()] }));
+  if (r.waiver && r.waiver.erro) out.push(el("p", { class: "status err", text: "A waiver ficou de fora: não consegui ler as estatísticas (" + r.waiver.erro + "). " + DICA_LIMITE }));
+  return out;
+}
+function linhasWaiverTexto(r) {
+  const dicas = r.ligas.map(l => [l, linhaWaiver(l, r)]).filter(x => x[1]);
+  if (!dicas.length) return [];
+  return ["", "💡 *NA WAIVER — " + MODOS_WAIVER.find(m => m[0] === modoWaiver())[1].toUpperCase() + "*"].concat(dicas.map(([l, w]) => "• " + l.nome + ": " + w.txt.replace(/^💡 WAIVER · [^:]+: /, "")));
+}
 function bancoDoTime(r, titulares) {
   const fora = new Set([...(titulares || []), ...(r.reserve || []), ...(r.taxi || [])]);
   return (r.players || []).filter(id => id && id !== "0" && !fora.has(id));
