@@ -310,7 +310,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 e (escalação irregular confirmada sai enxuta na mensagem do grupo)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 f (semanas 9 e 10 no histórico; botão da planilha separado do da mensagem do grupo)</p>
 </div>
 
 <script>
@@ -668,14 +668,14 @@ function el(tag, attrs, ...kids) {
   kids.forEach(k => k != null && e.appendChild(typeof k === "string" ? document.createTextNode(k) : k));
   return e;
 }
-async function copiar(texto, alvo) {
+async function copiar(texto, alvo, dica) {
   let ok = false;
   try { await navigator.clipboard.writeText(texto); ok = true; } catch (e) {
     const ta = el("textarea"); ta.value = texto; document.body.appendChild(ta); ta.select();
     try { ok = document.execCommand("copy"); } catch (e2) {} ta.remove();
   }
-  alvo.textContent = ok ? "Copiado ✓" : "Não deu para copiar: selecione o texto manualmente";
-  setTimeout(() => { alvo.textContent = ""; }, 2500);
+  alvo.textContent = ok ? "Copiado ✓" + (dica ? " " + dica : "") : "Não deu para copiar: selecione o texto manualmente";
+  clearTimeout(alvo._t); alvo._t = setTimeout(() => { alvo.textContent = ""; }, dica ? 12000 : 2500);
 }
 // uma formação em tabela: cada vaga com o titular que cabe nela (ou "falta") e, embaixo, quem sobra
 function tabelaFormacao(fm, t) {
@@ -3780,7 +3780,7 @@ function textoDefesas(res) {
 // Histórico do Registro da planilha (semana, liga, time, tipo e, se for o caso, "GM trocado"; sem os anulados). Linha sem semana = migrada da planilha antiga, conta como anterior.
 // Troca de GM (regra): as escalações irregulares do GM anterior deixam de valer e os W.O. dele contam como 1 só.
 // REGISTRO_INICIO
-const REGISTRO_WO_EI = { em: "11/11/2026", linhas: [
+const REGISTRO_WO_EI = { em: "17/11/2026", linhas: [
   [null, "BFA Franchise", "Buccaneers", "WO"],
   [null, "BFA Franchise", "Panthers", "Escalação irregular"],
   [null, "BFA Sloucos", "Commanders", "WO"],
@@ -3807,7 +3807,43 @@ const REGISTRO_WO_EI = { em: "11/11/2026", linhas: [
   [null, "BFA XFL", "Dolphins", "WO"],
   [null, "BFA BGL", "Ravens", "WO"],
   [null, "BFA BGL", "Ravens", "WO"],
-  [null, "BFA BGL", "Vikings", "WO"]
+  [null, "BFA BGL", "Vikings", "WO"],
+  [9, "BFA Sloucos", "Ravens", "Escalação irregular"],
+  [9, "BFA New Gen", "Commanders", "WO"],
+  [9, "BFA New Gen", "Buccaneers", "Escalação irregular"],
+  [9, "BFA Sorte", "Titans", "Escalação irregular"],
+  [9, "BFA Indiana Jones", "Browns", "WO"],
+  [9, "BFA Jalen Reagor", "Browns", "Escalação irregular"],
+  [9, "BFA Fab One", "Colts", "WO"],
+  [9, "BFA John Randle", "Cowboys", "WO"],
+  [9, "BFA BGL", "Texans", "WO"],
+  [9, "BFA BGL", "Colts", "WO"],
+  [9, "BFA BGL", "Ravens", "Escalação irregular"],
+  [9, "BFA BGL", "Titans", "Escalação irregular"],
+  [10, "BFA Sloucos", "Titans", "WO"],
+  [10, "BFA Sloucos", "Lions", "Escalação irregular"],
+  [10, "BFA Lucky", "Colts", "Escalação irregular"],
+  [10, "BFA Lucky", "Cardinals", "Escalação irregular"],
+  [10, "BFA Lucky", "Eagles", "Escalação irregular"],
+  [10, "BFA New Gen", "Cowboys", "WO"],
+  [10, "BFA New Gen", "Buccaneers", "Escalação irregular"],
+  [10, "BFA New Gen", "Falcons", "Escalação irregular"],
+  [10, "BFA Sorte", "Vikings", "WO"],
+  [10, "BFA Sorte", "Seahawks", "WO"],
+  [10, "BFA Indiana Jones", "Buccaneers", "Escalação irregular"],
+  [10, "BFA Jalen Reagor", "Falcons", "WO"],
+  [10, "BFA Jalen Reagor", "Browns", "Escalação irregular"],
+  [10, "BFA Jalen Reagor", "Dolphins", "Escalação irregular"],
+  [10, "BFA Fab One", "Falcons", "WO"],
+  [10, "BFA Fab One", "Packers", "WO"],
+  [10, "BFA Fab One", "Eagles", "Escalação irregular"],
+  [10, "BFA Fab One", "Jets", "Escalação irregular"],
+  [10, "BFA XFL", "Texans", "WO"],
+  [10, "BFA XFL", "Jets", "Escalação irregular"],
+  [10, "BFA XFL", "Falcons", "Escalação irregular"],
+  [10, "BFA John Randle", "Cowboys", "Escalação irregular"],
+  [10, "BFA BGL", "Texans", "WO"],
+  [10, "BFA BGL", "Titans", "WO"]
 ] };
 // REGISTRO_FIM
 const normReg = x => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -4050,7 +4086,7 @@ function desenharTerca(resultados, ctx) {
   const totWO = resultados.reduce((s, r) => s + r.times.filter(t => t.wo).length, 0);
   const totAl = resultados.reduce((s, r) => s + r.times.filter(t => t.alertas.length).length, 0);
   const fb = el("span", { class: "copied" });
-  const b1 = el("button", { class: "btn ghost", type: "button" }, "Copiar W.O. de todas");
+  const b1 = el("button", { class: "btn ghost", type: "button" }, "💬 Copiar mensagem do grupo (todas)");
   b1.addEventListener("click", () => copiar(resultados.map(r => mensagemWO(r, ctx)).join("\n\n"), fb));
   const b2 = el("button", { class: "btn ghost", type: "button" }, "Copiar alertas (só comissários)");
   b2.addEventListener("click", () => copiar(textoAlertas(resultados, ctx, "PARA ANÁLISE DE ESCALAÇÃO IRREGULAR"), fb));
@@ -4058,8 +4094,12 @@ function desenharTerca(resultados, ctx) {
   const naPlanilha = resultados.filter(r => r.liga.grupo === "bfa");
   let b3 = null;
   if (naPlanilha.length) {
-    b3 = el("button", { class: "btn ghost", type: "button" }, "Copiar W.O. para a planilha");
-    b3.addEventListener("click", () => copiar(linhasRegistro(naPlanilha, ctx), fb));
+    b3 = el("button", { class: "btn ghost", type: "button" }, "📊 Copiar linhas para a planilha");
+    b3.addEventListener("click", () => {
+      const txt = linhasRegistro(naPlanilha, ctx);
+      if (!txt) { fb.textContent = "Nada para a planilha nesta semana (nenhum W.O. nem escalação irregular marcada)."; clearTimeout(fb._t); fb._t = setTimeout(() => { fb.textContent = ""; }, 6000); return; }
+      copiar(txt, fb, "Na aba Registro, clique na célula Semana (coluna A) da primeira linha vazia e cole.");
+    });
   }
   // com a planilha ligada, os W.O. vão direto para a aba Registro
   let b4 = null, m4 = null;
@@ -4084,12 +4124,14 @@ function desenharTerca(resultados, ctx) {
   const trocEsc = (ctx.trocados || []).filter(x => resultados.some(r => r.times.some(t => (t.titulares || []).includes(x.id))));
   if (trocEsc.length) box.appendChild(el("p", { class: "foot", text: "Trocados depois da rodada (contam pelo time em que jogaram a semana " + ctx.semana + "): " +
     trocEsc.map(x => x.nome + " pelo " + x.naRodada + " (hoje " + x.hoje + ")").join(", ") + "." }));
-  if (b3) box.appendChild(el("p", { class: "foot", text: b4 ? "\"Lançar W.O. no Registro\" escreve direto na aba Registro da planilha (semana, liga, time, tipo, GM, franchises escaladas e o motivo) e não repete o que já estiver lá. \"Copiar W.O. para a planilha\" continua servindo para colar à mão." : "\"Copiar W.O. para a planilha\" copia Semana, Liga, Time, Tipo e GM: cole na primeira linha vazia da aba Registro, na coluna Semana." }));
+  if (b3) box.appendChild(el("p", { class: "foot", text: (b4 ? "\"Lançar W.O. no Registro\" escreve direto na aba Registro da planilha (semana, liga, time, tipo, GM, franchises escaladas e o motivo) e não repete o que já estiver lá. " : "") +
+    "Para a planilha use \"📊 Copiar linhas para a planilha\": ele copia Semana, Liga, Time, Tipo e GM de cada W.O. e de cada escalação irregular marcada; cole na aba Registro, na coluna Semana (A) da primeira linha vazia. " +
+    "A \"💬 mensagem do grupo\" é só para o WhatsApp: na planilha ela é recusada, porque a coluna Semana só aceita número." }));
   for (const r of resultados) {
     const wo = r.times.filter(t => t.wo), al = r.times.filter(t => t.alertas.length).sort((a, b) => (b.grave ? 1 : 0) - (a.grave ? 1 : 0));
     const desc = r.times.filter(t => t.descartados && t.descartados.length);
     const fb2 = el("span", { class: "copied" });
-    const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar W.O.");
+    const bc = el("button", { class: "btn ghost", type: "button" }, "💬 Copiar mensagem");
     bc.addEventListener("click", () => copiar(mensagemWO(r, ctx), fb2));
     const body = el("div", { class: "card-b" });
     if (r.erro) body.appendChild(el("div", { class: "status err", text: r.erro }));
@@ -4466,6 +4508,25 @@ setSemana(1);
 atualizarEstadoNfl();
 // aba deixada aberta no celular: ao voltar para ela, confere de novo a semana atual no Sleeper
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Date.now() - (st.estadoEm || 0) > 10 * 60 * 1000) atualizarEstadoNfl(); });
+// aba que ficou aberta (no notebook, por exemplo) roda o código antigo: avisa quando o site tem versão nova
+const VERSAO_ABERTA = ($("versao").textContent || "").trim();
+let versaoConferidaEm = 0;
+async function conferirVersao() {
+  if ($("versaoNova") || Date.now() - versaoConferidaEm < 5 * 60 * 1000) return;
+  versaoConferidaEm = Date.now();
+  try {
+    const t = await (await fetch(location.pathname + "?nv=" + Date.now(), { cache: "no-store" })).text();
+    const m = t.match(/id="versao"[^>]*>([^<]*)</);
+    if (!m || m[1].trim() === VERSAO_ABERTA) return;
+    const b = el("button", { class: "btn", type: "button" }, "Recarregar agora");
+    b.addEventListener("click", () => { location.href = location.pathname + "?v=" + Date.now(); });
+    document.querySelector(".wrap").prepend(el("div", { id: "versaoNova", class: "toolbar", role: "status", style: "border:2px solid var(--wo);border-radius:10px;padding:8px 12px;margin-bottom:10px" },
+      el("span", { class: "status err", text: "O site foi atualizado depois que esta página abriu. Recarregue antes de conferir, senão as mensagens saem com o texto antigo." }), b));
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferirVersao(); });
+window.addEventListener("focus", conferirVersao);
+setTimeout(conferirVersao, 60 * 1000);
 carregarListaOficial();
 </script>
 </body>
