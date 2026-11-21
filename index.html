@@ -314,7 +314,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 17/11/2026 g (waiver também em Meus times, inclusive nas ligas sem problema)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 20/11/2026 a (tank: empate na bye vale também para time sem nome e para o adversário)</p>
 </div>
 
 <script>
@@ -1457,6 +1457,7 @@ async function rodarTank() {
     const MED = {}; const mediasAte = w => (MED[w] = MED[w] || mediasDaLiga(MT.slice(0, w - 1)));   // média de cada jogador nas semanas antes de w
     const txtMedia = (id, w) => { const m = mediasAte(w)[id]; return m != null ? "MÉDIA " + num(m) : "SEM MÉDIA"; };
     let fr = {}; try { fr = mapearFranquias({ id }, league, users || [], rosters).fr || {}; } catch (e) {}
+    completarPeloElenco(fr, rosters, players);   // time sem nome ou com apelido ("America's Team", "Vaqueiros"): franquia pelo elenco
     const ligaSite = LIGAS.find(l => l.id === id);
     const c = configMinhas([{ league_id: id, name: league.name }]).cfg[id];
     const minimo = ligaSite ? ligaSite.min : c && c.on ? c.min : null;
@@ -1464,6 +1465,20 @@ async function rodarTank() {
     const margens = { margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const byUser = {}; (users || []).forEach(u => { byUser[u.user_id] = u; });
     const doTime = (ms, r) => (ms || []).find(x => x && x.roster_id === r.roster_id && Array.isArray(x.starters) && x.starters.length);
+    // liga de empate na bye: o confronto em que um dos dois está com a franquia de bye é empate para os dois (escalando ou não)
+    const EMP = {};
+    const emEmpate = (w, calW, rid) => {
+      if (!empate) return false;
+      if (!EMP[w]) {
+        const s = new Set(), par = {};
+        const deBye = x => { const f = fr[x]; return !!f && (calW[ABBR[f]] || "normal") === "bye"; };
+        rosters.forEach(r => { if (deBye(r.roster_id)) s.add(r.roster_id); });
+        (MT[w - 1] || []).forEach(m => { if (m && m.matchup_id != null) (par[m.matchup_id] = par[m.matchup_id] || []).push(m.roster_id); });
+        Object.values(par).forEach(ids => { if (ids.some(deBye)) ids.forEach(x => s.add(x)); });
+        EMP[w] = s;
+      }
+      return EMP[w].has(rid);
+    };
     const folgaDe = (tit, sig, conta) => sig && minimo ? Math.max(0, tit.filter(i => players[i] && players[i].team === sig && conta(i)).length - minimo) : Infinity;
     const times = rosters.map(r => {
       const u = byUser[r.owner_id] || {}, s = r.settings || {};
@@ -1472,7 +1487,7 @@ async function rodarTank() {
         pts: (s.fpts || 0) + (s.fpts_decimal || 0) / 100, agora: [], antes: [], empate: false };
       if (!acabou) {   // semana em andamento: status de agora
         const mt = doTime(MT[semana - 1], r), tit = mt ? mt.starters : (r.starters || []);
-        if (empate && sig && (calAgora[sig] || "normal") === "bye") t.empate = true;
+        if (emEmpate(semana, calAgora, r.roster_id)) t.empate = true;
         else {
           const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
             medias: semana > 1 ? mediasAte(semana) : null, ...margens };
@@ -1492,7 +1507,7 @@ async function rodarTank() {
         const mostra = feitas.includes(w);   // semana anterior lida só para "ficou sem jogar de novo"
         const mt = doTime(MT[w - 1], r), S = STATS[w], cal = calendarioDaSemana(w);
         if (!mt || !S) { semJogoAntes = new Set(); continue; }
-        if (empate && sig && (cal[sig] || "normal") === "bye") { semJogoAntes = new Set(); continue; }   // franquia de bye = empate nesta liga
+        if (emEmpate(w, cal, r.roster_id)) { semJogoAntes = new Set(); continue; }   // franquia de bye (dele ou do adversário) = empate nesta liga
         const tit = mt.starters, pp = mt.players_points || {};
         const fora = new Set([...tit, ...(r.taxi || []), ...(r.reserve || [])]);
         const banco = (mt.players || r.players || []).filter(i => i && i !== "0" && !fora.has(i));
@@ -1551,6 +1566,17 @@ async function rodarTank() {
   } finally { btn.disabled = false; }
 }
 const recordeTank = x => x.v + "-" + x.d + (x.e ? "-" + x.e : "");
+// time que o nome não ligou a nenhuma franquia: fica com a franquia que domina o elenco (liga franchise), se ela ainda estiver livre
+function completarPeloElenco(fr, rosters, players) {
+  const usadas = new Set(Object.values(fr));
+  rosters.filter(r => !fr[r.roster_id]).forEach(r => {
+    const cont = {}; (r.players || []).forEach(i => { const t = players[i] && players[i].team; if (t) cont[t] = (cont[t] || 0) + 1; });
+    const ord = Object.entries(cont).sort((a, b) => b[1] - a[1]); if (!ord.length) return;
+    const [sig, n] = ord[0], seg = ord[1] ? ord[1][1] : 0;
+    const f = Object.keys(ABBR).find(k => ABBR[k] === sig);
+    if (f && !usadas.has(f) && n >= 5 && n >= 2 * seg) { fr[r.roster_id] = f; usadas.add(f); }
+  });
+}
 const itensTank = (t, x) => [...x.agora.map(i => ({ ...i, txt: "S" + t.semana + ": " + i.txt })), ...x.antes.slice().sort((a, b) => b.w - a.w)];
 function textoTank(t) {
   const com = t.times.filter(x => x.fortes || x.leves);
@@ -1592,7 +1618,8 @@ function desenharTank(t) {
   if (t.semDados && t.semDados.length) box.appendChild(el("p", { class: "foot", text: "Sem estatística no Sleeper " + (t.semDados.length > 1 ? "nas semanas " + t.semDados.join(", ") + ": ficaram" : "na semana " + t.semDados[0] + ": ficou") + " de fora." }));
   if (avisoSemana(t.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(t.semana) }));
   const emp = t.times.filter(x => x.empate);
-  if (emp.length) box.appendChild(el("p", { class: "foot", text: "De bye nesta semana (empate nesta liga): " + emp.map(x => "@" + x.gm).join(", ") + "." }));
+  if (emp.length) box.appendChild(el("p", { class: "foot", text: "Empate nesta semana (franquia de bye, dele ou do adversário): " + emp.map(x => "@" + x.gm).join(", ") + "." }));
+  if (ligaEmpateBye(t.liga.nome)) box.appendChild(el("p", { class: "foot", text: "Liga de empate na bye: a semana em que a franquia do time (ou a do adversário) está de bye não conta para o tank." }));
   for (const x of t.times) {
     const sub = [x.nome, x.franquia, recordeTank(x), num(x.pts) + " pts"].filter(Boolean).join(" · ");
     if (!x.fortes && !x.leves) { box.appendChild(el("div", { class: "okrow" }, el("span", { text: "✅" }), el("span", { class: "okname", text: "@" + x.gm }), el("span", { class: "foot", text: sub }))); continue; }
