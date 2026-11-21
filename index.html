@@ -252,7 +252,8 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <label class="f">Usuário do Sleeper <input id="usuarioP" type="text" value="Apenastraja" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="op"><input id="pFranq" type="checkbox" checked> <span>Conferir as franchises nas minhas ligas franchise (a lista fica em "Minhas ligas franchise", no fim do resultado)</span></label>
       <label class="op"><input id="pBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
-        <select id="pMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="pMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
+        <select id="pMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="pMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais).
+        No ataque, igual ao tank, só aponta se o reserva também estiver projetado acima do titular nesta semana (projeção do Sleeper na pontuação da liga); na defesa vale só a média</span></label>
       <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver (até 6 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
         os melhores da <b>última semana</b>, a melhor média da <b>temporada</b> e quem está com o <b>snap subindo</b> (pelo menos
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
@@ -314,7 +315,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 a (tank: projeção no ataque, copiar um time ou os marcados)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 b (Meu painel: reserva forte no ataque também olha a projeção)</p>
 </div>
 
 <script>
@@ -1217,10 +1218,13 @@ async function rodarPessoal() {
     const waiver = $("pWaiver").checked ? { limiar: parseInt($("pSnap").value, 10) || 30 } : null;
     const base = waiver ? await baseDaWaiver(temporada, semana, players, waiver, status) : null;
     const Ssem = await statsDaSemana(temporada, semana).catch(() => null);   // quem já entrou em campo nesta semana
+    // projeção da semana: reserva forte no ataque só se o reserva também estiver projetado acima (defesa: só a média, a projeção de IDP do Sleeper é fraca)
+    let erroProj = null;
+    const Pw = banco ? await projDaSemana(temporada, semana).then(P => P && Object.keys(P).length ? P : null).catch(e => { erroProj = e.message; return null; }) : null;
     const ctxG = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], semMedias: [], erroMedias: null, ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
-      cfg, faltando, conferirFr, banco, waiver, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
+      cfg, faltando, conferirFr, banco, waiver, erroProj, comProj: !!Pw, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
     let feitas = 0;
     await emLotes(ativas, 5, async (lg) => {
       try {
@@ -1275,7 +1279,8 @@ async function rodarPessoal() {
           if (falhas.length) { res.semMedias.push(lg.name); res.erroMedias = falhas[0]; }
           const medias = mediasDaLiga(ant.map(x => x || []));
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
-          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32 }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          const proj = projecaoNaLiga(Pw, (league && league.scoring_settings) || {});
+          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, proj }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv, camp });
@@ -1322,6 +1327,7 @@ function desenharPessoal(r) {
     el("span", { class: "foot", text: "semana " + r.semana }), bc, fb,
     st.res.tank ? (() => { const b = el("button", { class: "btn ghost", type: "button" }, "Ver caça ao tank"); b.addEventListener("click", () => { st.vistaPessoal = "tank"; redesenhar(); }); return b; })() : null));
   notaWaiver(r).forEach(p => box.appendChild(p));
+  if (r.banco && r.erroProj) box.appendChild(el("p", { class: "status err", text: "Não consegui ler a projeção da semana (" + r.erroProj + "): a reserva forte no ataque ficou só pela média. " + DICA_LIMITE }));
   if (r.semMedias && r.semMedias.length) box.appendChild(el("p", { class: "status err", text: "As reservas fortes ficaram de fora em " + r.semMedias.length + (r.semMedias.length > 1 ? " ligas" : " liga") +
     " porque não consegui ler as rodadas anteriores (" + r.erroMedias + "): " + r.semMedias.join(", ") + ". " + DICA_LIMITE }));
   if (avisoSemana(r.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(r.semana) }));
