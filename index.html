@@ -253,7 +253,10 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <label class="op"><input id="pFranq" type="checkbox" checked> <span>Conferir as franchises nas minhas ligas franchise (a lista fica em "Minhas ligas franchise", no fim do resultado)</span></label>
       <label class="op"><input id="pBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
         <select id="pMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="pMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais).
-        No ataque, igual ao tank, só aponta se o reserva também estiver projetado acima do titular nesta semana (projeção do Sleeper na pontuação da liga); na defesa vale só a média</span></label>
+        No ataque, igual ao tank, só aponta se o reserva também estiver projetado acima do titular nesta semana (projeção do Sleeper na pontuação da liga).
+        Na defesa, o reserva também precisa ter jogado pelo menos
+        <select id="pSnapDef" aria-label="Snap mínimo do reserva na defesa"><option value="0">0</option><option value="40">40</option><option value="50" selected>50</option><option value="60">60</option><option value="70">70</option></select>%
+        dos snaps, em média, nos últimos 4 jogos do time (jogo em que não entrou conta 0): reserva de média alta que só entrou em um ou outro jogo não aparece. Vale também para o tank</span></label>
       <label class="op"><input id="pWaiver" type="checkbox" checked> <span>Garimpar a waiver (até 6 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
         os melhores da <b>última semana</b>, a melhor média da <b>temporada</b> e quem está com o <b>snap subindo</b> (pelo menos
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
@@ -315,7 +318,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 b (Meu painel: reserva forte no ataque também olha a projeção)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 c (reserva forte na defesa olha o snap médio: Meu painel e tank)</p>
 </div>
 
 <script>
@@ -1221,6 +1224,9 @@ async function rodarPessoal() {
     // projeção da semana: reserva forte no ataque só se o reserva também estiver projetado acima (defesa: só a média, a projeção de IDP do Sleeper é fraca)
     let erroProj = null;
     const Pw = banco ? await projDaSemana(temporada, semana).then(P => P && Object.keys(P).length ? P : null).catch(e => { erroProj = e.message; return null; }) : null;
+    // snap de defesa dos últimos jogos (o mesmo para todas as ligas): reserva de média alta que quase não joga não vira reserva forte
+    const snapMin = parseInt($("pSnapDef").value, 10) || 0;
+    const snapG = banco && snapMin > 0 && semana > 1 ? snapMedioIdp(await lerSemanasDoSnap(temporada, [semana]), semana, players) : null;
     const ctxG = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], semMedias: [], erroMedias: null, ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
@@ -1280,7 +1286,7 @@ async function rodarPessoal() {
           const medias = mediasDaLiga(ant.map(x => x || []));
           const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
           const proj = projecaoNaLiga(Pw, (league && league.scoring_settings) || {});
-          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, proj }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, proj, snap: snapG, snapMin }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv, camp });
@@ -1473,7 +1479,10 @@ async function rodarTank() {
     const c = configMinhas([{ league_id: id, name: league.name }]).cfg[id];
     const minimo = ligaSite ? ligaSite.min : c && c.on ? c.min : null;
     const empate = ligaEmpateBye(league.name), liga32 = rosters.length >= 32, rp = league.roster_positions || [];
-    const margens = { margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
+    const margens = { margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5, snapMin: parseInt($("pSnapDef").value, 10) || 0 };
+    // snap de defesa dos 4 jogos antes de cada semana (reserva de média alta que quase não joga não vira reserva forte)
+    const SN = margens.snapMin > 0 ? await lerSemanasDoSnap(temporada, [...feitas, ...(agoraW ? [agoraW] : [])]) : {};
+    const SNP = {}, snapAte = w => margens.snapMin > 0 && w > 1 ? (SNP[w] = SNP[w] || snapMedioIdp(SN, w, players)) : null;
     const byUser = {}; (users || []).forEach(u => { byUser[u.user_id] = u; });
     const doTime = (ms, r) => (ms || []).find(x => x && x.roster_id === r.roster_id && Array.isArray(x.starters) && x.starters.length);
     // liga de empate na bye: o confronto em que um dos dois está com a franquia de bye é empate para os dois (escalando ou não)
@@ -1501,7 +1510,7 @@ async function rodarTank() {
         if (emEmpate(semana, calAgora, r.roster_id)) t.empate = true;
         else {
           const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
-            medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), ...margens };
+            medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), snap: snapAte(semana), ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
             .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige ? "wo" : "warn", forte: !!i.corrige }));
           if (semana > 1) {
@@ -1547,7 +1556,7 @@ async function rodarTank() {
         });
         semJogoAntes = semJogo;
         if (mostra && w > 1) {
-          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, proj: projDe(w), ...margens };
+          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, proj: projDe(w), snap: snapAte(w), ...margens };
           const folga = folgaDe(tit, sig, i => jogouNaSemana(S, i, players[i], cal));
           const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasAte(w), () => true, sig, folga, rp);
           // quanto o reserva fez naquela semana (e o titular que ficou no lugar dele)
@@ -1628,7 +1637,8 @@ function desenharTank(t) {
   const regra = ["Vermelho = sinal forte: " + (t.acabou ? "" : "na semana " + t.semana + ", titular OUT, IR, SUS, de bye ou sem time, ou spot vazio, tendo opção no banco para a vaga; ") +
     (t.feitas.length ? "nas semanas que já acabaram, titular que não jogou (ou spot vazio) enquanto alguém que cabia na vaga jogou no banco." : "").replace(/; $/, "."),
     "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga" +
-    (t.comProj ? "; no ataque, só quando o reserva também estava projetado acima do titular naquela semana (projeção do Sleeper na pontuação da liga, PROJ): titular de média baixa mas bem projetado, como uma estrela em fase ruim, não conta." : "."),
+    (t.comProj ? "; no ataque, só quando o reserva também estava projetado acima do titular naquela semana (projeção do Sleeper na pontuação da liga, PROJ): titular de média baixa mas bem projetado, como uma estrela em fase ruim, não conta" : "") +
+    (t.margens.snapMin ? "; na defesa, só quando o reserva jogou pelo menos " + t.margens.snapMin + "% dos snaps, em média, nos 4 jogos do time antes daquela semana (SNAP; jogo em que não entrou conta 0): reserva na NFL que entrou em um ou outro jogo não conta." : "."),
     "Para copiar só alguns times, marque a caixa no canto de cada um e use \"Copiar marcados\"; \"Copiar\" no card copia só aquele time."];
   if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + rotSemanas(t.feitas).toLowerCase() + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.",
     "Para cada opção do banco aparece quanto ela fez na semana e a média dela nas semanas anteriores (o que o GM sabia na hora; sem média = menos de 2 jogos pontuando).");
@@ -2285,6 +2295,31 @@ function projecaoNaLiga(P, sc) {
   return id => (id in memo) ? memo[id] : (memo[id] = P[id] ? pontosNaLiga(P[id], sc) : null);
 }
 const ehIdp = p => posDe(p).some(x => ["DL", "LB", "DB", "DE", "DT", "CB", "S"].includes(x));
+// snap médio de defesa nos últimos jogos do time antes da semana w (até 4): jogo em que não entrou conta 0; bye do time não conta.
+// SN = { semana: estatísticas da semana }; null quando não há semana lida
+const SNAP_JOGOS = 4;
+const semanasDoSnap = w => Array.from({ length: SNAP_JOGOS + 2 }, (_, i) => w - 1 - i).filter(k => k >= 1);   // folga para o bye
+function snapMedioIdp(SN, w, players) {
+  const memo = {};
+  return id => {
+    if (id in memo) return memo[id];
+    const p = players[id]; if (!p || !p.team) return (memo[id] = null);
+    const vals = [];
+    for (const k of semanasDoSnap(w)) {
+      if (vals.length >= SNAP_JOGOS) break;
+      const S = SN[k]; if (!S || !Object.keys(S).length) continue;
+      if ((calendarioDaSemana(k)[p.team] || "normal") === "bye") continue;
+      const v = S[id];
+      vals.push(v && v.tm_def_snp ? Math.min(100, 100 * (v.def_snp || 0) / v.tm_def_snp) : 0);
+    }
+    return (memo[id] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null);
+  };
+}
+async function lerSemanasDoSnap(temporada, ws) {
+  const SN = {};
+  await Promise.all([...new Set(ws.flatMap(semanasDoSnap))].map(async k => { try { SN[k] = await statsDaSemana(temporada, k); } catch (e) {} }));
+  return SN;
+}
 const pontosNaLiga = (stt, sc) => { let t = 0; for (const k in sc) if (stt[k]) t += stt[k] * sc[k]; return t; };
 // candidatos (iguais em todas as ligas): jogou 2 ou 3 das últimas 3 semanas, snap do último jogo >= limiar e evoluindo:
 // subiu pelo menos 15 pontos do primeiro para o último jogo e não caiu mais de 10 no último (titular firme a 100% não entra)
@@ -2424,6 +2459,8 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
       if (!cabe || medias[bId] < medias[sId] + margem) continue;
       // ataque com projeção (tank): titular de média baixa mas projetado igual ou acima do reserva não é absurdo (ex.: estrela em fase ruim)
       if (ataque && ctx.proj) { const ps = ctx.proj(sId), pb = ctx.proj(bId); if (ps != null && pb != null && ps >= pb) continue; }
+      // defesa com snap: reserva de média alta que só entrou em um ou outro jogo (reserva na NFL) não conta
+      if (!ataque && ctx.snap) { const sb = ctx.snap(bId); if (sb != null && sb < (ctx.snapMin ?? 50)) continue; }
       pares.push({ b: bId, s: sId, dif: medias[bId] - medias[sId], ataque });
     }
   }
@@ -2436,7 +2473,10 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     if (tiraFranchise && tirados >= folga) continue;
     if (tiraFranchise) tirados++;
     usados.add(x.b); usadosS.add(x.s);
-    const pj = id => { const v = x.ataque && ctx.proj ? ctx.proj(id) : null; return v != null ? " · PROJ " + num(v) : ""; };
+    const pj = id => {
+      if (!x.ataque) { const s = ctx.snap ? ctx.snap(id) : null; return s != null ? " · SNAP " + Math.round(s) + "%" : ""; }
+      const v = ctx.proj ? ctx.proj(id) : null; return v != null ? " · PROJ " + num(v) : "";
+    };
     out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b], tit: x.s, mediaTit: medias[x.s],
       txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", " + pB.team + ", MÉDIA " + num(medias[x.b]) + pj(x.b) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + pj(x.s) + ")" });
   }
