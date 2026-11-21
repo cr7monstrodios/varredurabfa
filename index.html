@@ -314,7 +314,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 20/11/2026 a (tank: empate na bye vale também para time sem nome e para o adversário)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 a (tank: projeção no ataque, copiar um time ou os marcados)</p>
 </div>
 
 <script>
@@ -1454,6 +1454,11 @@ async function rodarTank() {
     }
     const semDados = proc.filter(w => STATS[w] && !Object.keys(STATS[w]).length);   // semana sem estatística no Sleeper: fica de fora
     semDados.forEach(w => { delete STATS[w]; });
+    // projeção de cada semana (na pontuação da liga): reserva forte no ataque só conta se o reserva também estava projetado acima do titular
+    const PROJ = {}; let erroProj = null;
+    status("Lendo as projeções de cada semana…");
+    await Promise.all([...new Set([...proc, ...(agoraW ? [agoraW] : [])])].map(async w => { try { const P = await projDaSemana(temporada, w); if (P && Object.keys(P).length) PROJ[w] = P; } catch (e) { erroProj = e.message; } }));
+    const PJ = {}, projDe = w => PROJ[w] ? (PJ[w] = PJ[w] || projecaoNaLiga(PROJ[w], league.scoring_settings || {})) : null;
     const MED = {}; const mediasAte = w => (MED[w] = MED[w] || mediasDaLiga(MT.slice(0, w - 1)));   // média de cada jogador nas semanas antes de w
     const txtMedia = (id, w) => { const m = mediasAte(w)[id]; return m != null ? "MÉDIA " + num(m) : "SEM MÉDIA"; };
     let fr = {}; try { fr = mapearFranquias({ id }, league, users || [], rosters).fr || {}; } catch (e) {}
@@ -1490,7 +1495,7 @@ async function rodarTank() {
         if (emEmpate(semana, calAgora, r.roster_id)) t.empate = true;
         else {
           const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
-            medias: semana > 1 ? mediasAte(semana) : null, ...margens };
+            medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
             .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige ? "wo" : "warn", forte: !!i.corrige }));
           if (semana > 1) {
@@ -1536,7 +1541,7 @@ async function rodarTank() {
         });
         semJogoAntes = semJogo;
         if (mostra && w > 1) {
-          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, ...margens };
+          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, proj: projDe(w), ...margens };
           const folga = folgaDe(tit, sig, i => jogouNaSemana(S, i, players[i], cal));
           const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasAte(w), () => true, sig, folga, rp);
           // quanto o reserva fez naquela semana (e o titular que ficou no lugar dele)
@@ -1556,6 +1561,7 @@ async function rodarTank() {
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     st.res.tank = { liga: { id, nome: league.name }, semana, acabou, sel, feitas: feitas.filter(w => STATS[w]), times, quando, margens, erroStats, semDados: semDados.filter(w => feitas.includes(w)),
+      erroProj, comProj: Object.keys(PROJ).length > 0, marcados: new Set(),
       ignorouEarly: !acabou && $("pEarly").checked,
       erroMt: falhasMt.length ? falhasMt.length + " de " + maxW + " rodadas (" + falhasMt[0] + ")" : null };
     st.vistaPessoal = "tank";
@@ -1578,8 +1584,10 @@ function completarPeloElenco(fr, rosters, players) {
   });
 }
 const itensTank = (t, x) => [...x.agora.map(i => ({ ...i, txt: "S" + t.semana + ": " + i.txt })), ...x.antes.slice().sort((a, b) => b.w - a.w)];
-function textoTank(t) {
-  const com = t.times.filter(x => x.fortes || x.leves);
+// texto do tank: a liga toda, ou só os times escolhidos (um time ou os marcados), sem a linha dos que estão sem sinal
+function textoTank(t, so) {
+  const escolhidos = so ? t.times.filter(x => so.includes(x)) : null;
+  const com = (escolhidos || t.times).filter(x => x.fortes || x.leves);
   const linhas = ["*POSSÍVEL TANK — " + t.liga.nome.toUpperCase() + " — " + rotSemanas(t.sel || [t.semana]) + "*", ""];
   if (!com.length) linhas.push("✅ Nenhum sinal de tank.", "");
   com.forEach(x => {
@@ -1588,26 +1596,34 @@ function textoTank(t) {
     linhas.push("");
   });
   const limpos = t.times.filter(x => !x.fortes && !x.leves);
-  if (limpos.length) linhas.push("✅ Sem sinal: " + limpos.map(x => "@" + x.gm).join(", "));
-  linhas.push("", "Conferido em " + t.quando + (t.feitas.length ? " (" + rotSemanas(t.feitas).toLowerCase() + " pelo que jogaram)" : ""));
+  if (!escolhidos && limpos.length) linhas.push("✅ Sem sinal: " + limpos.map(x => "@" + x.gm).join(", "), "");
+  linhas.push("Conferido em " + t.quando + (t.feitas.length ? " (" + rotSemanas(t.feitas).toLowerCase() + " pelo que jogaram)" : ""));
   return linhas.join("\n");
 }
 function desenharTank(t) {
   const box = $("resultado"); box.textContent = "";
   const fortes = t.times.filter(x => x.fortes), leves = t.times.filter(x => !x.fortes && x.leves);
   const fb = el("span", { class: "copied" });
-  const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar lista");
+  const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar todos");
   bc.addEventListener("click", () => copiar(textoTank(t), fb));
+  // marcar alguns times e copiar só eles (nas ligas menos rígidas nem todo sinal vale um alerta)
+  t.marcados = t.marcados || new Set();
+  const bm = el("button", { class: "btn ghost", type: "button" });
+  const atualizaBm = () => { bm.textContent = "Copiar marcados (" + t.marcados.size + ")"; bm.disabled = !t.marcados.size; };
+  bm.addEventListener("click", () => copiar(textoTank(t, t.times.filter(x => t.marcados.has(x.gm))), fb));
+  atualizaBm();
   let volta = null;
   if (st.res.pessoal) { volta = el("button", { class: "btn ghost", type: "button" }, "Ver meus times"); volta.addEventListener("click", () => { st.vistaPessoal = "times"; redesenhar(); }); }
   box.appendChild(el("div", { class: "summary" },
     el("span", { class: "count", text: "🕵️ " + t.liga.nome }),
     el("span", { class: "pill " + (fortes.length ? "wo" : "ok"), text: fortes.length + " de " + t.times.length + " times com sinal forte" }),
     el("span", { class: "pill warn", text: leves.length + " só com sinal leve" }),
-    el("span", { class: "foot", text: rotSemanas(t.sel || [t.semana]).toLowerCase() }), bc, fb, volta));
+    el("span", { class: "foot", text: rotSemanas(t.sel || [t.semana]).toLowerCase() }), bc, bm, fb, volta));
   const regra = ["Vermelho = sinal forte: " + (t.acabou ? "" : "na semana " + t.semana + ", titular OUT, IR, SUS, de bye ou sem time, ou spot vazio, tendo opção no banco para a vaga; ") +
     (t.feitas.length ? "nas semanas que já acabaram, titular que não jogou (ou spot vazio) enquanto alguém que cabia na vaga jogou no banco." : "").replace(/; $/, "."),
-    "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga."];
+    "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga" +
+    (t.comProj ? "; no ataque, só quando o reserva também estava projetado acima do titular naquela semana (projeção do Sleeper na pontuação da liga, PROJ): titular de média baixa mas bem projetado, como uma estrela em fase ruim, não conta." : "."),
+    "Para copiar só alguns times, marque a caixa no canto de cada um e use \"Copiar marcados\"; \"Copiar\" no card copia só aquele time."];
   if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + rotSemanas(t.feitas).toLowerCase() + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.",
     "Para cada opção do banco aparece quanto ela fez na semana e a média dela nas semanas anteriores (o que o GM sabia na hora; sem média = menos de 2 jogos pontuando).");
   if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem. Quem já entrou em campo nela (snap ou pontos) não é acusado, mesmo que esteja OUT agora: foi lesão durante o jogo.");
@@ -1615,6 +1631,7 @@ function desenharTank(t) {
   box.appendChild(el("p", { class: "foot", text: regra.join(" ") }));
   if (t.erroStats) box.appendChild(el("p", { class: "status err", text: "Não consegui ler quem jogou em alguma semana (" + t.erroStats + "): essas semanas ficaram de fora. " + DICA_LIMITE }));
   if (t.erroMt) box.appendChild(el("p", { class: "status err", text: "Não consegui ler " + t.erroMt + ": o que depende delas ficou de fora. " + DICA_LIMITE }));
+  if (t.erroProj) box.appendChild(el("p", { class: "status err", text: "Não consegui ler a projeção de alguma semana (" + t.erroProj + "): nela a reserva forte no ataque usa só a média. " + DICA_LIMITE }));
   if (t.semDados && t.semDados.length) box.appendChild(el("p", { class: "foot", text: "Sem estatística no Sleeper " + (t.semDados.length > 1 ? "nas semanas " + t.semDados.join(", ") + ": ficaram" : "na semana " + t.semDados[0] + ": ficou") + " de fora." }));
   if (avisoSemana(t.semana)) box.appendChild(el("p", { class: "status err", text: avisoSemana(t.semana) }));
   const emp = t.times.filter(x => x.empate);
@@ -1630,9 +1647,15 @@ function desenharTank(t) {
       ul.appendChild(li);
     });
     const rot = x.fortes ? x.fortes + (x.fortes > 1 ? " sinais fortes" : " sinal forte") + (x.leves ? " · " + x.leves + (x.leves > 1 ? " leves" : " leve") : "") : x.leves + (x.leves > 1 ? " sinais leves" : " sinal leve");
+    const fbx = el("span", { class: "copied" });
+    const b1 = el("button", { class: "btn ghost", type: "button" }, "Copiar");
+    b1.addEventListener("click", () => copiar(textoTank(t, [x]), fbx));
+    const cb = el("input", { type: "checkbox", "aria-label": "Marcar @" + x.gm + " para copiar" }); cb.checked = t.marcados.has(x.gm);
+    cb.addEventListener("change", () => { if (cb.checked) t.marcados.add(x.gm); else t.marcados.delete(x.gm); atualizaBm(); });
     box.appendChild(el("article", { class: "card" },
       el("div", { class: "card-h" }, el("div", {}, el("h2", { text: "@" + x.gm }),
-        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + (x.fortes ? "wo" : "warn"), text: rot }), el("span", { class: "foot", text: sub })))),
+        el("div", { class: "toolbar", style: "margin-top:4px" }, el("span", { class: "pill " + (x.fortes ? "wo" : "warn"), text: rot }), el("span", { class: "foot", text: sub }))),
+        el("div", { class: "toolbar" }, el("label", { class: "op", style: "margin:0;align-items:center" }, cb, el("span", { text: "marcar" })), b1, fbx)),
       el("div", { class: "card-b" }, ul)));
   }
 }
@@ -2241,6 +2264,20 @@ async function statsDaSemana(temporada, w) {
     .catch(e => { throw new Error("semana " + w + ": " + e.message); }).then(r => r.json());
   try { return await STATS_CACHE[k]; } catch (e) { delete STATS_CACHE[k]; throw e; }
 }
+// projeção do Sleeper para a semana (mesmo formato das estatísticas: estatística projetada de cada jogador)
+const PROJ_CACHE = {};
+async function projDaSemana(temporada, w) {
+  const k = temporada + "-" + w;
+  if (!PROJ_CACHE[k]) PROJ_CACHE[k] = buscar(API + "/projections/nfl/regular/" + temporada + "/" + w)
+    .catch(e => { throw new Error("projeção da semana " + w + ": " + e.message); }).then(r => r.json());
+  try { return await PROJ_CACHE[k]; } catch (e) { delete PROJ_CACHE[k]; throw e; }
+}
+// projeção em pontos da liga (pesos da própria liga); null quando o Sleeper não projeta o jogador
+function projecaoNaLiga(P, sc) {
+  if (!P) return null;
+  const memo = {};
+  return id => (id in memo) ? memo[id] : (memo[id] = P[id] ? pontosNaLiga(P[id], sc) : null);
+}
 const ehIdp = p => posDe(p).some(x => ["DL", "LB", "DB", "DE", "DT", "CB", "S"].includes(x));
 const pontosNaLiga = (stt, sc) => { let t = 0; for (const k in sc) if (stt[k]) t += stt[k] * sc[k]; return t; };
 // candidatos (iguais em todas as ligas): jogou 2 ou 3 das últimas 3 semanas, snap do último jogo >= limiar e evoluindo:
@@ -2373,11 +2410,15 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     if ((ctx.cal[pS.team] || "normal") === "bye") continue;
     const sS = ctx.statusDe(sId, pS); if (sS && sS !== "Questionable") continue;
     const margem = margemDe(slot, pS);
+    const ataque = !(slot ? SLOTS_IDP.has(slot) : ehIdp(pS));
     for (const bId of aptos) {
       const pB = ctx.players[bId];
       if (pS.team === sig && pB.team !== sig && !(folga > 0)) continue;   // só tira franchise se estiver acima do mínimo
       const cabe = slot ? cabeNoSlot(pB, slot) : mesmaPosicao(pB, pS);
-      if (cabe && medias[bId] >= medias[sId] + margem) pares.push({ b: bId, s: sId, dif: medias[bId] - medias[sId] });
+      if (!cabe || medias[bId] < medias[sId] + margem) continue;
+      // ataque com projeção (tank): titular de média baixa mas projetado igual ou acima do reserva não é absurdo (ex.: estrela em fase ruim)
+      if (ataque && ctx.proj) { const ps = ctx.proj(sId), pb = ctx.proj(bId); if (ps != null && pb != null && ps >= pb) continue; }
+      pares.push({ b: bId, s: sId, dif: medias[bId] - medias[sId], ataque });
     }
   }
   pares.sort((a, b) => b.dif - a.dif);
@@ -2389,8 +2430,9 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
     if (tiraFranchise && tirados >= folga) continue;
     if (tiraFranchise) tirados++;
     usados.add(x.b); usadosS.add(x.s);
+    const pj = id => { const v = x.ataque && ctx.proj ? ctx.proj(id) : null; return v != null ? " · PROJ " + num(v) : ""; };
     out.push({ id: x.b, nome: nomeDe(pB), media: medias[x.b], tit: x.s, mediaTit: medias[x.s],
-      txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", " + pB.team + ", MÉDIA " + num(medias[x.b]) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + ")" });
+      txt: nomeDe(pB) + " (" + posDe(pB).join("/") + ", " + pB.team + ", MÉDIA " + num(medias[x.b]) + pj(x.b) + ") NO BANCO > TITULAR " + nomeDe(pS) + " (" + posDe(pS).join("/") + ", MÉDIA " + num(medias[x.s]) + pj(x.s) + ")" });
   }
   return out;
 }
