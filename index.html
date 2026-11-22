@@ -320,7 +320,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 g (Questionable volta a ser sempre aviso, sem suposição de autosub)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 h (cortado depois de jogar na semana não é mais "sem time")</p>
 </div>
 
 <script>
@@ -1040,7 +1040,7 @@ async function rodarMeus() {
     if (ordemFixa) { const k = {}; ordemFixa.forEach((id, i) => { k[id] = i; }); ligas.forEach(l => { posicao[l.league_id] = l.league_id in k ? k[l.league_id] : 10000 + posicao[l.league_id]; }); }
     const ignoradas = ligas.filter(l => ligaIgnorada(l.name)).map(l => l.name);
     const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
-    const players = await carregarJogadores(status);
+    const players = await comQuemJogou(await carregarJogadores(status), temporada, semana);   // cortado depois de jogar não é "sem time"
     const banco = $("meusBanco").checked;
     const waiver = $("meusWaiver").checked ? { limiar: parseInt($("meusSnap").value, 10) || 30 } : null;
     const base = waiver ? await baseDaWaiver(temporada, semana, players, waiver, status) : null;
@@ -1317,7 +1317,7 @@ async function rodarPessoal() {
     if (ordemFixa) { const k = {}; ordemFixa.forEach((id, i) => { k[id] = i; }); ligas.forEach(l => { posicao[l.league_id] = l.league_id in k ? k[l.league_id] : 10000 + posicao[l.league_id]; }); }
     const ignoradas = ligas.filter(l => ligaIgnorada(l.name)).map(l => l.name);
     const ativas = ligas.filter(l => (l.status === "in_season" || l.status === "post_season") && !ligaIgnorada(l.name));
-    const players = await carregarJogadores(status);
+    const players = await comQuemJogou(await carregarJogadores(status), temporada, semana);   // cortado depois de jogar não é "sem time"
     const { cfg, faltando } = configMinhas(ativas);
     const conferirFr = $("pFranq").checked, banco = $("pBanco").checked;
     const waiver = $("pWaiver").checked ? { limiar: parseInt($("pSnap").value, 10) || 30 } : null;
@@ -1558,7 +1558,8 @@ async function rodarTank() {
     status("Lendo as rodadas da liga…");
     const falhasMt = [];
     const MT = (await rodadasAnteriores(id, maxW, falhasMt)).map(x => x || []);
-    const players = await carregarJogadores(status);
+    const players0 = await carregarJogadores(status);
+    const players = agoraW ? await comQuemJogou(players0, temporada, agoraW) : players0;   // cortado depois de jogar não é "sem time"
     const STATS = {}; let erroStats = null;
     let Sagora = null;   // semana em andamento: quem já entrou em campo (lesão durante o jogo não é tank)
     if (agoraW) Sagora = await statsDaSemana(temporada, agoraW).catch(() => null);
@@ -4588,7 +4589,7 @@ async function rodar() {
   btn.disabled = true;
   status("Fazendo a varredura…");
   try {
-    const players = await carregarJogadores(status);
+    const players = await comQuemJogou(await carregarJogadores(status), temporadaAtual(), semana);   // cortado depois de jogar não é "sem time"
     const modo = st.modo;
     const snap = $("usarSnap").checked ? (await snapOficial(semana, modo, grupo)).snap : null;
     const statusDe = snap ? (id) => snap.s[id] || null : (id, p) => p.injury_status || null;
@@ -4639,14 +4640,28 @@ async function rodar() {
 // Time de cada jogador NA RODADA (estatísticas da semana no Sleeper). Quem foi trocado depois da rodada
 // (ex.: DeForest Buckner, do IND para o SF na terça) conta pelo time em que jogou aquela semana.
 const TIMES_RODADA = {};
-async function timesDaRodada(temporada, semana) {
+async function lerRodada(temporada, semana) {
   const k = temporada + "-" + semana;
   if (TIMES_RODADA[k] && Date.now() - TIMES_RODADA[k].em > 10 * 60 * 1000) delete TIMES_RODADA[k];   // relê a cada 10 min
-  if (!TIMES_RODADA[k]) TIMES_RODADA[k] = buscar("https://api.sleeper.com/stats/nfl/" + temporada + "/" + semana + "?season_type=regular")
-    .catch(e => { throw new Error(e.message.replace(/^o Sleeper /, "")); }).then(r => r.json())
-    .then(arr => { const m = {}; (arr || []).forEach(x => { if (x && x.player_id && x.team) m[x.player_id] = x.team; }); return m; });
-  TIMES_RODADA[k].em = Date.now();
-  try { return await TIMES_RODADA[k]; } catch (e) { delete TIMES_RODADA[k]; throw e; }
+  if (!TIMES_RODADA[k]) { TIMES_RODADA[k] = buscar("https://api.sleeper.com/stats/nfl/" + temporada + "/" + semana + "?season_type=regular")
+    .catch(e => { throw new Error(e.message.replace(/^o Sleeper /, "")); }).then(r => r.json()); TIMES_RODADA[k].em = Date.now(); }
+  try { return (await TIMES_RODADA[k]) || []; } catch (e) { delete TIMES_RODADA[k]; throw e; }
+}
+async function timesDaRodada(temporada, semana) {
+  const m = {}; (await lerRodada(temporada, semana)).forEach(x => { if (x && x.player_id && x.team) m[x.player_id] = x.team; }); return m;
+}
+// só quem já entrou em campo nesta semana (jogo ou snap): fica com o time em que jogou. Ex.: Daniel Jones jogou pelos Colts
+// na quinta e foi cortado depois; não é "sem time" na varredura de sábado. Quem foi cortado sem ter jogado segue sendo acusado.
+async function timesDeQuemJogou(temporada, semana) {
+  const m = {};
+  (await lerRodada(temporada, semana)).forEach(x => {
+    const s = (x && x.stats) || {};
+    if (x && x.player_id && x.team && (s.gp > 0 || s.off_snp > 0 || s.def_snp > 0 || s.st_snp > 0)) m[x.player_id] = x.team;
+  });
+  return m;
+}
+async function comQuemJogou(players, temporada, semana) {
+  try { return comTimesDaRodada(players, await timesDeQuemJogou(temporada, semana)).players; } catch (e) { return players; }
 }
 function comTimesDaRodada(players, times) {
   const out = Object.assign({}, players), trocados = [];
