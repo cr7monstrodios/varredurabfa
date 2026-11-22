@@ -237,7 +237,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
     <div id="painel-meus" class="meus" hidden>
       <label class="f">Usuário do Sleeper <input id="usuario" type="text" value="Apenastraja" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="op"><input id="meusEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana (quinta, feriado), que já travaram</span></label>
-      <label class="op"><input id="meusQ" type="checkbox"> <span>Mostrar também Questionable (nas ligas com autosub, Q com reserva saudável para a vaga no banco vira só uma linha cinza e não conta como problema; o Sleeper não mostra quem você marcou no autosub)</span></label>
+      <label class="op"><input id="meusQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
       <label class="op"><input id="meusBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
         <select id="meusMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="meusMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
       <label class="op"><input id="meusWaiver" type="checkbox" checked> <span>Garimpar a waiver em todas as ligas, mesmo nas sem problema (até 6 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
@@ -264,7 +264,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
         dos snaps no último jogo, crescendo 15 pontos ou mais nos últimos 3)</span></label>
       <label class="op"><input id="pEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana, que já travaram</span></label>
-      <label class="op"><input id="pQ" type="checkbox"> <span>Mostrar também Questionable (nas ligas com autosub, Q com reserva saudável para a vaga no banco vira só uma linha cinza e não conta como problema; o Sleeper não mostra quem você marcou no autosub)</span></label>
+      <label class="op"><input id="pQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
       <div class="toolbar">
         <button id="rodarPessoal" class="btn" type="button">Revisar meus times</button>
         <span id="statusPessoal" class="status" role="status" aria-live="polite"></span>
@@ -320,7 +320,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 f (Questionable coberto pelo autosub nas ligas que permitem)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 g (Questionable volta a ser sempre aviso, sem suposição de autosub)</p>
 </div>
 
 <script>
@@ -1008,17 +1008,7 @@ function problemasDoTime(titulares, ctx, extra) {
     else {
       if (ctx.semStatusDe && p.team === ctx.semStatusDe) return;
       const s = ctx.statusDe ? ctx.statusDe(id, p) : p.injury_status; if (!s) return;
-      if (s === "Questionable") {
-        if (!ctx.mostrarQ) return;
-        // liga com autosub ligado: se houver no banco um reserva saudável (sem Q, OUT etc.) que cabe na vaga e ainda não jogou,
-        // o autosub cobre o Q (o Sleeper não mostra quem está com autosub marcado): vira só uma linha clara, sem contar como problema
-        if (ctx.autosub && roster) {
-          const saud = banco.filter(b => cabeNoSlot(b, slot) && b.team && est(b) !== "bye" && !(est(b) === "early" && e !== "early")
-            && !(ctx.statusDe ? ctx.statusDe(idDe.get(b), b) : b.injury_status));
-          if (saud.length) { itens.push({ txt: "🔁 " + nomeJ + " ESTÁ QUESTIONABLE · O AUTOSUB COBRE COM " + juntar(saud.slice(0, 2).map(nomePosTime)) + " NO BANCO (SE ESTIVER MARCADO)", pos, tipo: "neutro", info: true }); return; }
-        }
-        itens.push({ txt: nomeJ + " ESTÁ QUESTIONABLE", pos, tipo: "warn" }); return;
-      }
+      if (s === "Questionable") { if (ctx.mostrarQ) itens.push({ txt: nomeJ + " ESTÁ QUESTIONABLE", pos, tipo: "warn" }); return; }
       motivo = " ESTÁ " + (NAO_CONTA[s] || String(s).toUpperCase());
     }
     if (!roster) { itens.push({ txt: nomeJ + motivo, pos, tipo: "wo" }); return; }
@@ -1084,7 +1074,7 @@ async function rodarMeus() {
           const m = (matchups || []).find(x => x && x.roster_id === meu.roster_id && Array.isArray(x.starters) && x.starters.length);
           const titulares = m ? m.starters : (meu.starters || []);
           const ctx = { ...ctxG, statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, m && m.players_points)) };
-          const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32, autosub: !!(league && league.settings && league.settings.max_subs > 0) },
+          const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32 },
             { roster: meu, rp: league && league.roster_positions, cap: ligaCap(lg.name), temVaga: temVagaNoElenco(meu, league) });
           const fm = league && comFormacao ? avaliarFormacao(league, titulares, players) : null;
           if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm) });
@@ -1364,7 +1354,7 @@ async function rodarPessoal() {
           res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens: [], fr: { franquia: fq, bye: true, empate: true }, ehFr, camp }); return;
         }
         const cap = ligaCap(lg.name), temVaga = temVagaNoElenco(meu, league);
-        const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32, semStatusDe: ehFr && fq ? ABBR[fq] : null, autosub: !!(league && league.settings && league.settings.max_subs > 0) },
+        const itens = problemasDoTime(titulares, { ...ctx, semQbKBye: rosters.length >= 32, semStatusDe: ehFr && fq ? ABBR[fq] : null },
           { roster: meu, rp: league && league.roster_positions, cap, temVaga });
         if (ligaSite && ligaSite.formacao && league) { const fm = avaliarFormacao(league, titulares, players); if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm), tipo: "warn" }); }
         let sig = fq ? ABBR[fq] : null, fr = null, folga = Infinity;
