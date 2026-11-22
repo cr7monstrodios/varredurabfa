@@ -237,7 +237,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
     <div id="painel-meus" class="meus" hidden>
       <label class="f">Usuário do Sleeper <input id="usuario" type="text" value="Apenastraja" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="op"><input id="meusEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana (quinta, feriado), que já travaram</span></label>
-      <label class="op"><input id="meusQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
+      <label class="op"><input id="meusQ" type="checkbox" checked> <span>Mostrar também Questionable</span></label>
       <label class="op"><input id="meusBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
         <select id="meusMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="meusMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais)</span></label>
       <label class="op"><input id="meusWaiver" type="checkbox" checked> <span>Garimpar a waiver em todas as ligas, mesmo nas sem problema (até 6 livres por liga; nas ligas de cap, só se o elenco tiver vaga). No resultado dá para trocar entre
@@ -264,7 +264,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
         <select id="pSnap" aria-label="Snap mínimo no último jogo"><option value="20">20</option><option value="30" selected>30</option><option value="40">40</option><option value="50">50</option></select>%
         dos snaps no último jogo, crescendo 15 pontos ou mais nos últimos 3)</span></label>
       <label class="op"><input id="pEarly" type="checkbox"> <span>Ignorar jogadores dos jogos antecipados desta semana, que já travaram</span></label>
-      <label class="op"><input id="pQ" type="checkbox"> <span>Mostrar também Questionable</span></label>
+      <label class="op"><input id="pQ" type="checkbox" checked> <span>Mostrar também Questionable</span></label>
       <div class="toolbar">
         <button id="rodarPessoal" class="btn" type="button">Revisar meus times</button>
         <span id="statusPessoal" class="status" role="status" aria-live="polite"></span>
@@ -320,7 +320,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 i (titular sem time sempre em vermelho)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 j (opções guardadas no aparelho; Questionable marcado por padrão)</p>
 </div>
 
 <script>
@@ -4821,6 +4821,20 @@ async function conferirVersao() {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") conferirVersao(); });
 window.addEventListener("focus", conferirVersao);
 setTimeout(conferirVersao, 60 * 1000);
+// opções de Meus times e do Meu painel ficam guardadas neste aparelho: ao recarregar a página, não voltam ao padrão
+const OPCOES_GUARDADAS = ["meusEarly", "meusQ", "meusBanco", "meusMargemA", "meusMargemD", "meusWaiver", "meusSnap",
+  "pEarly", "pQ", "pFranq", "pBanco", "pMargemA", "pMargemD", "pSnapDef", "pWaiver", "pSnap"];
+(function guardarOpcoes() {
+  const salvas = armazenar.get("bfa-opcoes") || {};
+  OPCOES_GUARDADAS.forEach(id => {
+    const e = $(id); if (!e) return;
+    if (id in salvas) {
+      if (e.type === "checkbox") e.checked = !!salvas[id];
+      else if ([...e.options].some(o => o.value === String(salvas[id]))) e.value = String(salvas[id]);
+    }
+    e.addEventListener("change", () => { const s2 = armazenar.get("bfa-opcoes") || {}; s2[id] = e.type === "checkbox" ? e.checked : e.value; armazenar.set("bfa-opcoes", s2); });
+  });
+})();
 carregarListaOficial();
 </script>
 </body>
