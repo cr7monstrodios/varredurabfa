@@ -320,7 +320,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 h (cortado depois de jogar na semana não é mais "sem time")</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 i (titular sem time sempre em vermelho)</p>
 </div>
 
 <script>
@@ -962,7 +962,7 @@ async function emLotes(itens, n, fn) {
   await Promise.all(trabalhadores);
 }
 // Problemas da escalação. Com o elenco e as vagas da liga, cada problema diz o que fazer:
-// vermelho = tem opção no banco para a vaga (corrigir); amarelo = não tem opção no banco.
+// vermelho = tem opção no banco para a vaga (corrigir), ou titular sem time (vale zero); amarelo = não tem opção no banco.
 // Jogador que já entrou em campo na semana (snap na estatística do Sleeper ou pontos na liga) não é acusado
 // pelo status de agora: se ficou OUT depois, foi lesão durante o jogo.
 function jaEntrouEmCampo(S, pp) {
@@ -1015,7 +1015,8 @@ function problemasDoTime(titulares, ctx, extra) {
     const lv = livresPara(slot);
     // com opção no banco, a posição e o time do titular vão junto do nome dele (no fim ficariam parecendo ser do reserva)
     if (lv.length) itens.push({ txt: nomePosTime(p) + motivo + " · NO BANCO: " + juntar(lv.slice(0, 2).map(opcaoTxt)), tipo: "wo", corrige: true });
-    else itens.push({ txt: nomeJ + motivo + semOpcao(), pos, tipo: "warn" });
+    // sem time vale zero com certeza: vermelho mesmo sem opção no banco (aí a saída é a waiver)
+    else itens.push({ txt: nomeJ + motivo + semOpcao(), pos, tipo: e === "semtime" ? "wo" : "warn", semTime: e === "semtime" });
   });
   return itens;
 }
@@ -1616,7 +1617,7 @@ async function rodarTank() {
           const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
             medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), snap: snapAte(semana), ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
-            .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige ? "wo" : "warn", forte: !!i.corrige }));
+            .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige || i.semTime ? "wo" : "warn", forte: !!(i.corrige || i.semTime) }));
           if (semana > 1) {
             const noEscopo = p => !(ctx.ignorarAntecipados && (calAgora[p.team] || "normal") === "early");
             const folga = folgaDe(tit, sig, i => { const x = ctx.statusDe(i, players[i]); return !x || x === "Questionable"; });
@@ -1738,7 +1739,7 @@ function desenharTank(t) {
     el("span", { class: "pill " + (fortes.length ? "wo" : "ok"), text: fortes.length + " de " + t.times.length + " times com sinal forte" }),
     el("span", { class: "pill warn", text: leves.length + " só com sinal leve" }),
     el("span", { class: "foot", text: rotSemanas(t.sel || [t.semana]).toLowerCase() }), bc, bm, fb, volta));
-  const regra = ["Vermelho = sinal forte: " + (t.acabou ? "" : "na semana " + t.semana + ", titular OUT, IR, SUS, de bye ou sem time, ou spot vazio, tendo opção no banco para a vaga; ") +
+  const regra = ["Vermelho = sinal forte: " + (t.acabou ? "" : "na semana " + t.semana + ", titular OUT, IR, SUS, de bye ou sem time, ou spot vazio, tendo opção no banco para a vaga, e titular sem time mesmo sem opção (vale zero); ") +
     (t.feitas.length ? "nas semanas que já acabaram, titular que não jogou (ou spot vazio) enquanto alguém que cabia na vaga jogou no banco." : "").replace(/; $/, "."),
     "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga" +
     (t.comProj ? "; no ataque, só quando o reserva também estava projetado acima do titular naquela semana (projeção do Sleeper na pontuação da liga, PROJ): titular de média baixa mas bem projetado, como uma estrela em fase ruim, não conta" : "") +
