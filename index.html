@@ -184,6 +184,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   </header>
 
   <nav id="abas" class="abas" role="tablist" aria-label="Grupos de ligas"></nav>
+  <div id="avisoWO" role="region" aria-label="W.O. para zerar" hidden style="border:1px solid var(--line);border-left:4px solid var(--wo);border-radius:10px;padding:10px 12px;margin:0 0 12px"></div>
   <div id="linkSenha" class="toolbar" hidden style="margin:-2px 0 10px">
     <span class="hint">Digite a sua senha uma vez para liberar o atalho da planilha neste aparelho:</span>
     <input id="senhaLink" type="password" class="txt" autocomplete="current-password" aria-label="Senha para liberar o atalho da planilha">
@@ -319,7 +320,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 d (ligas com formação: reserva forte de defesa só da mesma posição do FBB)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 e (aviso de W.O. para zerar a pontuação)</p>
 </div>
 
 <script>
@@ -443,8 +444,108 @@ function desenharAbas() {
   const gA = GRUPOS.find(g => g.id === st.grupo);
   $("nota-grupo").textContent = gA.nota; $("nota-grupo").hidden = !gA.nota;
   aplicarPainel();
+  mostrarAvisoWO();
 }
 const travadoAgora = g => !!g.soTravado || (!!g.restrito && !liberado()) || (!!g.pessoal && !pessoalLiberado());
+// ---------------------------------------------------------------- aviso: W.O. com a pontuação ainda não zerada (comissários)
+// Fonte: o histórico de W.O. do site (semanas já lançadas) e a conferência de terça feita neste aparelho.
+// No Sleeper, quando o comissário zera a pontuação do time, o confronto fica com custom_points = 0: é isso que o site confere.
+const GRUPOS_AVISO = new Set(["bfa", "cap", "hp", "ricos", "oficiais"]);
+const AVISO = { itens: null, quando: null, carregando: false, todos: false };
+function woParaConferir() {
+  const vistos = new Set(), out = [];
+  const add = (semana, liga, time, gm) => {
+    if (!semana || !liga || !time) return;
+    const k = liga.id + "|" + semana + "|" + time; if (vistos.has(k)) return;
+    vistos.add(k); out.push({ semana, liga, time, gm: gm || null, estado: null });
+  };
+  REGISTRO_WO_EI.linhas.forEach(([w, nome, time, tipo, sit]) => { if (w && tipo === "WO" && sit !== "Anulado") add(w, LIGAS.find(l => l.nome === nome), time); });
+  Object.values(st.res).forEach(r => {
+    if (!r || r.tipo !== "terca" || !r.ctx) return;
+    (r.resultados || []).forEach(x => (x.times || []).filter(t => t.wo).forEach(t => add(r.ctx.semana, x.liga, t.franquia, t.gm)));
+  });
+  return out;
+}
+async function conferirZerados() {
+  if (AVISO.carregando) { AVISO.deNovo = true; return; }   // já está conferindo: confere de novo no fim (ex.: terça acabou de rodar)
+  AVISO.carregando = true; AVISO.deNovo = false; desenharAvisoWO();
+  const itens = woParaConferir(), porLiga = {};
+  itens.forEach(i => (porLiga[i.liga.id] = porLiga[i.liga.id] || []).push(i));
+  await emLotes(Object.keys(porLiga), 4, async id => {
+    const lista = porLiga[id];
+    try {
+      const [league, users, rosters] = await Promise.all([getJSON("/league/" + id), getJSON("/league/" + id + "/users").catch(() => []), getJSON("/league/" + id + "/rosters")]);
+      const fr = mapearFranquias(lista[0].liga, league, users || [], rosters).fr || {};
+      const byUser = {}; (users || []).forEach(u => { byUser[u.user_id] = u; });
+      const MT = {};
+      for (const i of lista) {
+        const rid = Object.keys(fr).find(k => fr[k] === i.time);
+        const ro = rid && rosters.find(r => String(r.roster_id) === String(rid));
+        if (!ro) { i.estado = "?"; continue; }
+        if (!i.gm) i.gm = (byUser[ro.owner_id] || {}).display_name || null;
+        if (!(i.semana in MT)) MT[i.semana] = await getJSON("/league/" + id + "/matchups/" + i.semana).catch(() => null);
+        const m = (MT[i.semana] || []).find(x => x && x.roster_id === ro.roster_id);
+        if (!m) { i.estado = "?"; continue; }
+        i.pts = m.points; i.custom = m.custom_points;
+        i.estado = m.custom_points == null ? "falta" : Number(m.custom_points) === 0 ? "zerado" : "ajustado";
+      }
+    } catch (e) { lista.forEach(i => { i.estado = "?"; }); }
+  });
+  const agora = new Date();
+  AVISO.itens = itens; AVISO.carregando = false;
+  AVISO.quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  desenharAvisoWO();
+  if (AVISO.deNovo) conferirZerados();
+}
+const pendenteWO = i => i.estado === "falta" || i.estado === "ajustado";
+const linhaAviso = i => i.liga.nome + ": " + i.time + (i.gm ? " (@" + i.gm + ")" : "") +
+  (i.estado === "ajustado" ? ", pontuação ajustada para " + num(Number(i.custom)) + ", não zerada" : i.estado === "falta" ? ", fez " + num(i.pts || 0) : "");
+function textoAvisoWO() {
+  const falta = (AVISO.itens || []).filter(pendenteWO);
+  const linhas = ["*📣 W.O. — FALTA ZERAR A PONTUAÇÃO NO SLEEPER*"];
+  [...new Set(falta.map(i => i.semana))].sort((a, b) => b - a).forEach(w => {
+    linhas.push("", "Semana " + w);
+    falta.filter(i => i.semana === w).forEach(i => linhas.push("• " + linhaAviso(i)));
+  });
+  linhas.push("", "Conferido no Sleeper em " + AVISO.quando + ".");
+  return linhas.join("\n");
+}
+function desenharAvisoWO() {
+  const box = $("avisoWO");
+  const mostra = liberado() && GRUPOS_AVISO.has(st.grupo);
+  box.hidden = !mostra; if (!mostra) return;
+  box.textContent = "";
+  if (!AVISO.itens) { box.appendChild(el("span", { class: "hint", text: AVISO.carregando ? "📣 Conferindo no Sleeper se a pontuação dos W.O. já foi zerada…" : "📣 W.O. para zerar: ainda não conferido." })); return; }
+  const falta = AVISO.itens.filter(pendenteWO), duvida = AVISO.itens.filter(i => i.estado === "?");
+  const ult = AVISO.itens.length ? Math.max(...AVISO.itens.map(i => i.semana)) : null;
+  const daUlt = AVISO.itens.filter(i => i.semana === ult);
+  const fb = el("span", { class: "copied" });
+  const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar aviso");
+  bc.addEventListener("click", () => copiar(textoAvisoWO(), fb));
+  const br = el("button", { class: "btn ghost", type: "button" }, AVISO.carregando ? "Conferindo…" : "Conferir de novo");
+  br.disabled = AVISO.carregando; br.addEventListener("click", () => conferirZerados());
+  const bt = el("button", { class: "btn ghost", type: "button" }, AVISO.todos ? "Só os pendentes" : "Ver todos");
+  bt.addEventListener("click", () => { AVISO.todos = !AVISO.todos; desenharAvisoWO(); });
+  box.appendChild(el("div", { class: "toolbar" },
+    el("b", { text: "📣 W.O. para zerar" }),
+    el("span", { class: "pill " + (falta.length ? "wo" : "ok"), text: falta.length ? falta.length + (falta.length > 1 ? " ainda não zerados" : " ainda não zerado") : "todos zerados" }),
+    ult ? el("span", { class: "foot", text: "semana " + ult + ": " + daUlt.filter(i => i.estado === "zerado").length + " de " + daUlt.length + " zerados" }) : null,
+    falta.length ? bc : null, bt, br, fb));
+  const lista = AVISO.todos ? AVISO.itens : falta.concat(duvida);
+  if (lista.length) {
+    const ul = el("ul", { class: "lst", style: "margin-top:8px" });
+    lista.slice().sort((a, b) => (b.semana - a.semana) || (LIGAS.indexOf(a.liga) - LIGAS.indexOf(b.liga))).forEach(i => {
+      const est = i.estado === "zerado" ? "✅ zerado" : i.estado === "falta" ? "⚠️ falta zerar" : i.estado === "ajustado" ? "⚠️ ajustado, não zerado" : "❔ não consegui conferir";
+      ul.appendChild(el("li", { class: i.estado === "zerado" ? "neutro" : i.estado === "?" ? "warn" : "wo" }, "S" + i.semana + " · " + linhaAviso(i) + " · " + est));
+    });
+    box.appendChild(ul);
+  }
+  box.appendChild(el("p", { class: "foot", style: "margin:6px 0 0", text: "Confere no Sleeper se o comissário já zerou a pontuação de cada W.O. (lançados no histórico do site e os da conferência de terça feita neste aparelho). Conferido em " + AVISO.quando + "." }));
+}
+function mostrarAvisoWO() {
+  desenharAvisoWO();
+  if (liberado() && GRUPOS_AVISO.has(st.grupo) && !AVISO.itens && !AVISO.carregando) conferirZerados();
+}
 function redesenhar() {
   const r = st.res[st.grupo];
   const g = GRUPOS.find(x => x.id === st.grupo);
@@ -4600,6 +4701,7 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
     resultados.sort((a, b) => LIGAS.indexOf(a.liga) - LIGAS.indexOf(b.liga));
     st.res[grupo] = { tipo: "terca", resultados, ctx };
     if (st.grupo === grupo) desenharTerca(resultados, ctx);
+    if (resultados.some(r => r.times.some(t => t.wo))) conferirZerados();   // o aviso de W.O. para zerar passa a incluir os desta conferência
     status("Pronto. " + quando + ".");
   } catch (e) {
     status("Não consegui falar com o Sleeper: " + e.message + ". Verifique a internet e tente de novo.", true);
