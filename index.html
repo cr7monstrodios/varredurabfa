@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 23/11/2026 a (playoffs se a temporada acabasse hoje)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 23/11/2026 b (playoffs se a temporada acabasse hoje)</p>
 </div>
 
 <script>
@@ -4826,7 +4826,7 @@ function melhorDoEmpate(grupo, tipo, D) {
   if (tipo === "wc") {
     const divs = {}; grupo.forEach(x => { (divs[x.div] = divs[x.div] || []).push(x); });
     if (Object.values(divs).some(g => g.length > 1)) {
-      const reduz = Object.values(divs).map(g => g.length > 1 ? ordenarPO(g, "div", D)[0] : g[0]);
+      const reduz = Object.values(divs).map(g => g.length > 1 ? ordenarPO(g, "div", D)[0][0] : g[0]);
       if (reduz.length < grupo.length) return melhorDoEmpate(reduz, tipo, D);
     }
   }
