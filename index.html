@@ -202,6 +202,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
           <button id="modo-dom" type="button" aria-pressed="true">Sábado · demais</button>
           <button id="modo-terca" type="button" aria-pressed="false">Terça · W.O.</button>
           <button id="modo-draft" type="button" aria-pressed="false">Draft</button>
+          <button id="modo-playoffs" type="button" aria-pressed="false">Playoffs</button>
         </div>
       </div>
     </div>
@@ -320,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 21/11/2026 j (opções guardadas no aparelho; Questionable marcado por padrão)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 23/11/2026 a (playoffs se a temporada acabasse hoje)</p>
 </div>
 
 <script>
@@ -557,6 +558,7 @@ function redesenhar() {
   else if (st.grupo === "pessoal") desenharPessoal(r);
   else if (r.tipo === "terca") desenharTerca(r.resultados, r.ctx);
   else if (r.tipo === "draft") desenharDraft(r.resultados);
+  else if (r.tipo === "playoffs") desenharPlayoffs(r.resultados);
   else desenharResultado(r.resultados, r.ctx);
 }
 function desenharLigas() {
@@ -571,7 +573,7 @@ function desenharLigas() {
 }
 function setModo(m) {
   st.modo = m;
-  ["early", "dom", "terca", "draft"].forEach(x => $("modo-" + x).setAttribute("aria-pressed", m === x));
+  ["early", "dom", "terca", "draft", "playoffs"].forEach(x => $("modo-" + x).setAttribute("aria-pressed", m === x));
   aplicarPainel();
 }
 function setSemana(w) {
@@ -2324,10 +2326,10 @@ function aplicarPainel() {
   const ofi = st.grupo === "oficiais", cont = st.grupo === "contender", nada = meus || ofi || cont;
   const vis = {
     "painel-senha": travado,
-    "box-semana": !travado && !ofi && !cont && (meus || m !== "draft"),
+    "box-semana": !travado && !ofi && !cont && (meus || (m !== "draft" && m !== "playoffs")),
     "box-modo": !travado && !nada,
     "box-ligas": !travado && !nada,
-    "box-cal": !travado && !ofi && !cont && (meus || m !== "draft"),
+    "box-cal": !travado && !ofi && !cont && (meus || (m !== "draft" && m !== "playoffs")),
     "box-outros": !travado && !nada && varre,
     "box-banco": !travado && !nada && varre,
     "box-terca": !travado && !nada && m === "terca",
@@ -2339,7 +2341,7 @@ function aplicarPainel() {
     "box-rodar": !travado && !nada,
   };
   for (const [id, v] of Object.entries(vis)) $(id).hidden = !v;
-  $("rodar").textContent = { early: "Fazer varredura", dom: "Fazer varredura", terca: "Conferir W.O.", draft: "Calcular draft" }[m];
+  $("rodar").textContent = { early: "Fazer varredura", dom: "Fazer varredura", terca: "Conferir W.O.", draft: "Calcular draft", playoffs: "Montar playoffs" }[m];
   $("bloquear").hidden = !liberado();
   if (ofi && !travado) estadoOficiais();
   atualizarSnapBox();
@@ -4582,6 +4584,7 @@ async function rodar() {
   const ligas = LIGAS.filter(l => l.grupo === grupo && st.ligasOn.has(l.id));
   if (!ligas.length) { status("Escolha pelo menos uma liga.", true); return; }
   if (st.modo === "draft") return rodarDraft(ligas, grupo, btn, status);
+  if (st.modo === "playoffs") return rodarPlayoffs(ligas, grupo, btn, status);
   status("Conferindo a semana no Sleeper…"); await conferirSemana();
   const semana = parseInt($("semana").value, 10);
   if (!(semana >= 1 && semana <= 18)) { status("Escolha uma semana de 1 a 18.", true); return; }
@@ -4747,11 +4750,223 @@ async function rodarDraft(ligas, grupo, btn, status) {
   } finally { btn.disabled = false; }
 }
 
+// ---------------------------------------------------------------- playoffs: classificação e chaveamento se a temporada acabasse hoje
+// BFA (as 11 da varredura): passam os 8 campeões de divisão; em cada conferência 1×4 e 2×3 (W15), final de conferência (W16), Super Bowl (W17).
+// Cap e AFC/NFC: 7 por conferência (4 campeões + 3 wildcards); o seed 1 folga; seeds 2 a 7 em sextangular, os 2 de maior pontuação avançam (W15);
+//   triangular com o seed 1, o de maior pontuação é o campeão da conferência (W16); Super Bowl (W17).
+// Sonserina e Lufa Lufa (16 times, uma conferência): 7 passam (4 campeões + 3 wildcards); o seed 1 folga; 2×7, 3×6, 4×5 (W15);
+//   o seed 1 pega o pior seed que avançar e os outros dois se enfrentam (W16); final (W17).
+// Desempate da NFL: confronto direto, campanha na divisão, jogos em comum, campanha na conferência, força da vitória, força da tabela;
+//   por último, pontos marcados (no lugar dos critérios de pontos da NFL).
+const FORMATO_PO = { bfa: "bfa", cap: "cap", hp: "hp" };
+const pctDe = r => { const n = r.w + r.l + r.t; return n ? (r.w + r.t / 2) / n : 0; };
+const recTxt = r => r.w + "-" + r.l + (r.t ? "-" + r.t : "");
+function campanhaContra(x, ids) {   // campanha de x contra os times de ids
+  const r = { w: 0, l: 0, t: 0 };
+  x.jogos.forEach(j => { if (ids.has(j.opp)) { if (j.r === 1) r.w++; else if (j.r === 0) r.l++; else r.t++; } });
+  return r;
+}
+async function dadosPlayoffs(liga) {
+  const [league, users, rosters] = await Promise.all([getJSON("/league/" + liga.id), getJSON("/league/" + liga.id + "/users"), getJSON("/league/" + liga.id + "/rosters")]);
+  const { fr, avisos, byUser } = mapearFranquias(liga, league, users || [], rosters);
+  const md = league.metadata || {};
+  const inicioPo = (league.settings && league.settings.playoff_week_start) || 15;
+  const jogados = Math.min(inicioPo - 1, Math.max(0, ...rosters.map(r => { const s = r.settings || {}; return (s.wins || 0) + (s.losses || 0) + (s.ties || 0); })));
+  const falhas = [];
+  const MT = jogados ? await rodadasAnteriores(liga.id, jogados, falhas) : [];
+  const times = rosters.map(r => {
+    const s = r.settings || {}, u = byUser[r.owner_id] || {};
+    const divNome = md["division_" + s.division] || "";
+    return { rid: r.roster_id, franquia: fr[r.roster_id] || (u.metadata && u.metadata.team_name) || u.display_name || "Time " + r.roster_id, gm: u.display_name || "?",
+      div: s.division || 0, divNome: divNome.toUpperCase(), conf: divKey(divNome).split(" ")[0],
+      w: s.wins || 0, l: s.losses || 0, t: s.ties || 0, pf: (s.fpts || 0) + (s.fpts_decimal || 0) / 100, jogos: [] };
+  });
+  const porRid = {}; times.forEach(x => { porRid[x.rid] = x; });
+  MT.forEach((ms, i) => {
+    const par = {}; (ms || []).forEach(m => { if (m && m.matchup_id != null) (par[m.matchup_id] = par[m.matchup_id] || []).push(m); });
+    Object.values(par).forEach(p => {
+      if (p.length !== 2) return;
+      const pts = m => m.custom_points != null ? Number(m.custom_points) : Number(m.points || 0);
+      const [a, b] = p, pa = pts(a), pb = pts(b);
+      if (porRid[a.roster_id]) porRid[a.roster_id].jogos.push({ w: i + 1, opp: b.roster_id, r: pa > pb ? 1 : pa < pb ? 0 : 0.5 });
+      if (porRid[b.roster_id]) porRid[b.roster_id].jogos.push({ w: i + 1, opp: a.roster_id, r: pb > pa ? 1 : pb < pa ? 0 : 0.5 });
+    });
+  });
+  times.forEach(x => { x.pct = pctDe(x); });
+  return { league, times, porRid, avisos, falhas, jogados, inicioPo };
+}
+// critérios de desempate da NFL (versão para fantasy: o último é pontos marcados)
+function criteriosPO(grupo, tipo, D) {
+  const ids = new Set(grupo.map(x => x.rid));
+  const mesmaDiv = grupo.every(x => x.div === grupo[0].div);
+  const conf = new Set(D.times.filter(y => y.conf === grupo[0].conf).map(y => y.rid));
+  const divIds = x => new Set(D.times.filter(y => y.div === x.div && y.rid !== x.rid).map(y => y.rid));
+  const comuns = (() => { let s = null; grupo.forEach(x => { const o = new Set(x.jogos.map(j => j.opp).filter(o => !ids.has(o))); s = s ? new Set([...s].filter(v => o.has(v))) : o; }); return s || new Set(); })();
+  const sov = x => { const r = { w: 0, l: 0, t: 0 }; x.jogos.filter(j => j.r === 1).forEach(j => { const o = D.porRid[j.opp]; if (o) { r.w += o.w; r.l += o.l; r.t += o.t; } }); return pctDe(r); };
+  const sos = x => { const r = { w: 0, l: 0, t: 0 }; x.jogos.forEach(j => { const o = D.porRid[j.opp]; if (o) { r.w += o.w; r.l += o.l; r.t += o.t; } }); return pctDe(r); };
+  const h2h = { nome: "confronto direto", v: x => { const r = campanhaContra(x, new Set([...ids].filter(i => i !== x.rid))); return r.w + r.l + r.t ? pctDe(r) : null; } };
+  const lista = [];
+  if (tipo === "div" || mesmaDiv) {
+    lista.push(h2h, { nome: "campanha na divisão", v: x => pctDe(campanhaContra(x, divIds(x))) });
+    lista.push({ nome: "jogos em comum", v: x => pctDe(campanhaContra(x, comuns)) });
+    lista.push({ nome: "campanha na conferência", v: x => pctDe(campanhaContra(x, conf)) });
+  } else {
+    if (grupo.length === 2) lista.push(h2h);
+    else lista.push({ nome: "confronto direto", varrida: true });   // 3 ou mais: só vale quem venceu (ou perdeu para) todos os outros
+    lista.push({ nome: "campanha na conferência", v: x => pctDe(campanhaContra(x, conf)) });
+    lista.push({ nome: "jogos em comum", v: x => { const r = campanhaContra(x, comuns); return r.w + r.l + r.t >= 4 ? pctDe(r) : null; } });
+  }
+  lista.push({ nome: "força da vitória", v: sov }, { nome: "força da tabela", v: sos }, { nome: "pontos marcados", v: x => x.pf });
+  return lista;
+}
+// o primeiro colocado entre times empatados; quando um critério corta parte do grupo, recomeça do primeiro critério com os que sobraram (regra da NFL)
+function melhorDoEmpate(grupo, tipo, D) {
+  if (grupo.length === 1) return { time: grupo[0], motivo: null };
+  // wildcard com dois ou mais da mesma divisão: antes, fica só o melhor de cada divisão
+  if (tipo === "wc") {
+    const divs = {}; grupo.forEach(x => { (divs[x.div] = divs[x.div] || []).push(x); });
+    if (Object.values(divs).some(g => g.length > 1)) {
+      const reduz = Object.values(divs).map(g => g.length > 1 ? ordenarPO(g, "div", D)[0] : g[0]);
+      if (reduz.length < grupo.length) return melhorDoEmpate(reduz, tipo, D);
+    }
+  }
+  for (const c of criteriosPO(grupo, tipo, D)) {
+    if (c.varrida) {
+      const venceuTodos = grupo.find(x => grupo.every(y => y === x || x.jogos.some(j => j.opp === y.rid) && x.jogos.filter(j => j.opp === y.rid).every(j => j.r === 1)));
+      if (venceuTodos) return { time: venceuTodos, motivo: c.nome };
+      const perdeuTodos = grupo.filter(x => grupo.every(y => y === x || x.jogos.some(j => j.opp === y.rid) && x.jogos.filter(j => j.opp === y.rid).every(j => j.r === 0)));
+      if (perdeuTodos.length && perdeuTodos.length < grupo.length) return melhorDoEmpate(grupo.filter(x => !perdeuTodos.includes(x)), tipo, D);
+      continue;
+    }
+    const vals = grupo.map(x => c.v(x));
+    if (vals.some(v => v == null)) continue;   // critério não se aplica (não se enfrentaram, menos de 4 jogos em comum)
+    const max = Math.max(...vals);
+    const top = grupo.filter((x, i) => Math.abs(vals[i] - max) < 1e-9);
+    if (top.length === 1) return { time: top[0], motivo: c.nome };
+    if (top.length < grupo.length) return melhorDoEmpate(top, tipo, D);
+  }
+  const t = grupo.slice().sort((a, b) => a.rid - b.rid)[0];
+  return { time: t, motivo: "sorteio (empatados em tudo)" };
+}
+// ordena por aproveitamento e resolve os empates; devolve [time, motivo]: motivo quando o time ficou à frente de outro(s) empatado(s) por critério
+function ordenarPO(lista, tipo, D) {
+  const ord = lista.slice().sort((a, b) => b.pct - a.pct);
+  const out = [];
+  for (let i = 0; i < ord.length;) {
+    let j = i; while (j < ord.length && Math.abs(ord[j].pct - ord[i].pct) < 1e-9) j++;
+    let resto = ord.slice(i, j);
+    while (resto.length > 1) {
+      const { time, motivo } = melhorDoEmpate(resto, tipo, D);
+      out.push([time, motivo]); resto = resto.filter(x => x !== time);
+    }
+    out.push([resto[0], null]);
+    i = j;
+  }
+  return out;
+}
+function classificarPO(D, formato) {
+  const confs = [...new Set(D.times.map(x => x.conf))].sort();
+  return confs.map(conf => {
+    const daConf = D.times.filter(x => x.conf === conf);
+    const divs = [...new Set(daConf.map(x => x.div))];
+    const campeoes = divs.map(d => { const [x, motivo] = ordenarPO(daConf.filter(y => y.div === d), "div", D)[0]; return Object.assign(x, { campeao: true, motivoDiv: motivo }); });
+    const seedsCamp = ordenarPO(campeoes, "wc", D).map(([x, motivo]) => Object.assign(x, { motivoSeed: motivo }));
+    const resto = ordenarPO(daConf.filter(x => !campeoes.includes(x)), "wc", D).map(([x, motivo]) => Object.assign(x, { campeao: false, motivoSeed: motivo, motivoDiv: null }));
+    const nWc = formato === "bfa" ? 0 : 3;
+    const seeds = seedsCamp.concat(resto.slice(0, nWc));
+    const fora = resto.slice(nWc);
+    const ultimo = seeds[seeds.length - 1];
+    // na briga: quem está a até 1 jogo de entrar (pela liderança da própria divisão ou pela última vaga de wildcard)
+    const atras = (a, x) => ((a.w - x.w) + (x.l - a.l)) / 2;
+    const briga = fora.filter(x => {
+      const lider = campeoes.find(c => c.div === x.div);
+      return Math.min(lider ? atras(lider, x) : Infinity, nWc ? atras(ultimo, x) : Infinity) <= 1;
+    }).slice(0, 4);
+    return { conf, seeds, briga };
+  });
+}
+const nomePO = x => x.franquia + " (@" + x.gm + ")";
+const linhaSeed = (x, i) => (i + 1) + ". " + nomePO(x) + " " + recTxt(x) + " · " + (x.campeao ? "campeão " + (x.divNome || "da divisão") : "wildcard") +
+  (x.motivoDiv ? " (levou a divisão no desempate: " + x.motivoDiv + ")" : "") + (x.motivoSeed ? " (à frente no desempate: " + x.motivoSeed + ")" : "");
+function chavePO(c, formato) {
+  const s = c.seeds, n = (i) => s[i] ? s[i].franquia : "?";
+  if (formato === "bfa") return ["Semana 15: " + n(0) + " × " + n(3) + " · " + n(1) + " × " + n(2), "Semana 16: final da " + c.conf + " com os dois vencedores"];
+  if (formato === "cap") return ["Semana 15: " + n(0) + " folga · sextangular com " + s.slice(1, 7).map(x => x.franquia).join(", ") + " (os 2 de maior pontuação avançam)",
+    "Semana 16: triangular da " + c.conf + ": " + n(0) + " e os 2 do sextangular (o de maior pontuação é o campeão da conferência)"];
+  return ["Semana 15: " + n(0) + " folga · " + n(1) + " × " + n(6) + " · " + n(2) + " × " + n(5) + " · " + n(3) + " × " + n(4),
+    "Semana 16: " + n(0) + " pega o pior seed que avançar; os outros dois se enfrentam"];
+}
+function textoPlayoffs(r) {
+  const linhas = ["*PLAYOFFS SE A TEMPORADA ACABASSE HOJE — " + r.liga.nome.toUpperCase() + "*", "(campanhas após a semana " + r.jogados + ")", ""];
+  r.confs.forEach(c => {
+    if (r.confs.length > 1) linhas.push("*" + c.conf + "*");
+    c.seeds.forEach((x, i) => linhas.push(linhaSeed(x, i)));
+    if (c.briga.length) linhas.push("Na briga: " + c.briga.map(x => x.franquia + " " + recTxt(x)).join(", "));
+    chavePO(c, r.formato).forEach(l => linhas.push(l));
+    linhas.push("");
+  });
+  linhas.push(r.formato === "hp" ? "Semana 17: final" : "Semana 17: Super Bowl (campeão da AFC × campeão da NFC)");
+  return linhas.join("\n");
+}
+async function rodarPlayoffs(ligas, grupo, btn, status) {
+  const formato = FORMATO_PO[grupo];
+  if (!formato) { status("O formato de playoffs está configurado só para BFA, Cap e AFC/NFC e Sonserina e Lufa Lufa. Me passe a regra destas ligas para eu incluir.", true); return; }
+  btn.disabled = true; status("Montando os playoffs…");
+  try {
+    const resultados = []; let feitas = 0;
+    await emLotes(ligas, 3, async liga => {
+      try {
+        const D = await dadosPlayoffs(liga);
+        resultados.push({ liga, formato, jogados: D.jogados, confs: classificarPO(D, formato), avisos: D.avisos, falhas: D.falhas });
+      } catch (e) { resultados.push({ liga, formato, erro: e.message }); }
+      feitas++; status("Lendo ligas… " + feitas + "/" + ligas.length);
+    });
+    resultados.sort((a, b) => LIGAS.indexOf(a.liga) - LIGAS.indexOf(b.liga));
+    st.res[grupo] = { tipo: "playoffs", resultados };
+    if (st.grupo === grupo) desenharPlayoffs(resultados);
+    status("Pronto.");
+  } catch (e) {
+    status("Não consegui falar com o Sleeper: " + e.message + ".", true);
+  } finally { btn.disabled = false; }
+}
+function desenharPlayoffs(resultados) {
+  const box = $("resultado"); box.textContent = "";
+  const fb = el("span", { class: "copied" });
+  const b1 = el("button", { class: "btn ghost", type: "button" }, "Copiar de todas");
+  b1.addEventListener("click", () => copiar(resultados.filter(r => r.confs).map(textoPlayoffs).join("\n\n"), fb));
+  const regra = { bfa: "passam os 8 campeões de divisão; em cada conferência 1×4 e 2×3 na semana 15, final de conferência na 16 e Super Bowl na 17.",
+    cap: "7 por conferência (4 campeões + 3 wildcards); seed 1 folga; seeds 2 a 7 em sextangular na semana 15 (2 avançam); triangular na 16; Super Bowl na 17.",
+    hp: "7 passam (4 campeões + 3 wildcards); seed 1 folga; 2×7, 3×6, 4×5 na semana 15; na 16 o seed 1 pega o pior seed que avançar; final na 17." }[(resultados[0] || {}).formato] || "";
+  box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: "🏆 Playoffs se acabasse hoje" }), b1, fb));
+  box.appendChild(el("p", { class: "foot", text: "Regra: " + regra + " Desempate da NFL: confronto direto, campanha na divisão, jogos em comum, campanha na conferência, força da vitória e força da tabela; por último, pontos marcados. Os W.O. já zerados no Sleeper entram como derrota." }));
+  for (const r of resultados) {
+    const fb2 = el("span", { class: "copied" });
+    const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar");
+    bc.addEventListener("click", () => copiar(textoPlayoffs(r), fb2));
+    const body = el("div", { class: "card-b" });
+    if (r.erro) body.appendChild(el("div", { class: "status err", text: "Não deu para montar: " + r.erro + "." }));
+    if (r.avisos && r.avisos.length) body.appendChild(el("div", { class: "status err", text: "Não identifiquei a franquia de: " + r.avisos.join(", ") + "." }));
+    if (r.falhas && r.falhas.length) body.appendChild(el("div", { class: "status err", text: "Não consegui ler " + r.falhas.length + " rodada(s): o desempate pode sair incompleto. " + DICA_LIMITE }));
+    (r.confs || []).forEach(c => {
+      const ul = el("ul", { class: "lst" });
+      c.seeds.forEach((x, i) => ul.appendChild(el("li", { class: x.campeao ? "neutro" : "info" }, linhaSeed(x, i))));
+      if (c.briga.length) ul.appendChild(el("li", { class: "warn" }, "Na briga: " + c.briga.map(x => nomePO(x) + " " + recTxt(x)).join(", ")));
+      chavePO(c, r.formato).forEach(l => ul.appendChild(el("li", { class: "neutro" }, el("b", { text: l.split(":")[0] + ":" }), l.slice(l.indexOf(":") + 1))));
+      if (r.confs.length > 1) body.appendChild(el("h3", { text: c.conf, style: "margin:10px 0 4px;font-size:14px" }));
+      body.appendChild(ul);
+    });
+    if (r.confs) body.appendChild(el("p", { class: "foot", text: r.formato === "hp" ? "Semana 17: final." : "Semana 17: Super Bowl, campeão da AFC × campeão da NFC." }));
+    box.appendChild(el("article", { class: "card" },
+      el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }), el("div", { class: "foot", text: r.jogados ? "campanhas após a semana " + r.jogados : "" })), el("div", { class: "toolbar" }, bc, fb2)), body));
+  }
+}
+
 // ---------------------------------------------------------------- início
 $("modo-early").addEventListener("click", () => setModo("early"));
 $("modo-dom").addEventListener("click", () => setModo("dom"));
 $("modo-terca").addEventListener("click", () => setModo("terca"));
 $("modo-draft").addEventListener("click", () => setModo("draft"));
+$("modo-playoffs").addEventListener("click", () => setModo("playoffs"));
 $("entrar").addEventListener("click", entrar);
 $("entrarLink").addEventListener("click", liberarLink);
 $("senhaLink").addEventListener("keydown", (e) => { if (e.key === "Enter") liberarLink(); });
@@ -4822,8 +5037,8 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 window.addEventListener("focus", conferirVersao);
 setTimeout(conferirVersao, 60 * 1000);
 // opções de Meus times e do Meu painel ficam guardadas neste aparelho: ao recarregar a página, não voltam ao padrão
-const OPCOES_GUARDADAS = ["meusEarly", "meusQ", "meusBanco", "meusMargemA", "meusMargemD", "meusWaiver", "meusSnap",
-  "pEarly", "pQ", "pFranq", "pBanco", "pMargemA", "pMargemD", "pSnapDef", "pWaiver", "pSnap"];
+const OPCOES_GUARDADAS = ["meusQ", "meusBanco", "meusMargemA", "meusMargemD", "meusWaiver", "meusSnap",   // "ignorar antecipados" segue o dia da semana
+  "pQ", "pFranq", "pBanco", "pMargemA", "pMargemD", "pSnapDef", "pWaiver", "pSnap"];
 (function guardarOpcoes() {
   const salvas = armazenar.get("bfa-opcoes") || {};
   OPCOES_GUARDADAS.forEach(id => {
