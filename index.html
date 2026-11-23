@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 23/11/2026 c (playoffs se a temporada acabasse hoje)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 23/11/2026 d (playoffs se a temporada acabasse hoje)</p>
 </div>
 
 <script>
@@ -4887,8 +4887,10 @@ function classificarPO(D, formato) {
   });
 }
 const nomePO = x => x.franquia + " (@" + x.gm + ")";
-const linhaSeed = (x, i) => (i + 1) + ". " + nomePO(x) + " " + recTxt(x) + " · " + (x.campeao ? "campeão " + (x.divNome || "da divisão") : "wildcard") +
-  (x.motivoDiv ? " (levou a divisão no desempate: " + x.motivoDiv + ")" : "") + (x.motivoSeed ? " (à frente no desempate: " + x.motivoSeed + ")" : "");
+const linhaSeed = (x, i) => {
+  const notas = [x.motivoDiv && "divisão por " + x.motivoDiv, x.motivoSeed && "seed por " + x.motivoSeed].filter(Boolean);
+  return (i + 1) + ". " + nomePO(x) + " " + recTxt(x) + " · " + (x.campeao ? "campeão " + (x.divNome || "da divisão") : "wildcard") + (notas.length ? " (desempate: " + notas.join("; ") + ")" : "");
+};
 function chavePO(c, formato) {
   const s = c.seeds, n = (i) => s[i] ? s[i].franquia : "?";
   if (formato === "bfa") return ["Semana 15: " + n(0) + " × " + n(3) + " · " + n(1) + " × " + n(2), "Semana 16: final da " + c.conf + " com os dois vencedores"];
