@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 d (semana 11 no histórico; mensagem copiada vai direto para a planilha quando ligada)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 e (playoffs: só os classificados, com a posição)</p>
 </div>
 
 <script>
@@ -4954,29 +4954,15 @@ function classificarPO(D, formato) {
     return { conf, seeds, briga };
   });
 }
-const nomePO = x => x.franquia + " (@" + x.gm + ")";
-const linhaSeed = (x, i) => {
-  const notas = [x.motivoDiv && "divisão por " + x.motivoDiv, x.motivoSeed && "seed por " + x.motivoSeed].filter(Boolean);
-  return (i + 1) + ". " + nomePO(x) + " " + recTxt(x) + " · " + (x.campeao ? "campeão " + (x.divNome || "da divisão") : "wildcard") + (notas.length ? " (desempate: " + notas.join("; ") + ")" : "");
-};
-function chavePO(c, formato) {
-  const s = c.seeds, n = (i) => s[i] ? s[i].franquia : "?";
-  if (formato === "bfa") return ["Semana 15: " + n(0) + " × " + n(3) + " · " + n(1) + " × " + n(2), "Semana 16: final da " + c.conf + " com os dois vencedores"];
-  if (formato === "cap") return ["Semana 15: " + n(0) + " folga · sextangular com " + s.slice(1, 7).map(x => x.franquia).join(", ") + " (os 2 de maior pontuação avançam)",
-    "Semana 16: triangular da " + c.conf + ": " + n(0) + " e os 2 do sextangular (o de maior pontuação é o campeão da conferência)"];
-  return ["Semana 15: " + n(0) + " folga · " + n(1) + " × " + n(6) + " · " + n(2) + " × " + n(5) + " · " + n(3) + " × " + n(4),
-    "Semana 16: " + n(0) + " pega o pior seed que avançar; os outros dois se enfrentam"];
-}
+// texto curto: em cada conferência, os classificados com a posição de agora (1º a 4º nas BFA; 1º a 7º nas outras, com os wildcards marcados)
+const tagSeed = x => x.campeao ? (x.divNome || "campeão") : "wildcard";
 function textoPlayoffs(r) {
-  const linhas = ["*PLAYOFFS SE A TEMPORADA ACABASSE HOJE — " + r.liga.nome.toUpperCase() + "*", "(campanhas após a semana " + r.jogados + ")", ""];
+  const linhas = ["*PLAYOFFS AGORA — " + r.liga.nome.toUpperCase() + "* (após a semana " + r.jogados + ")"];
   r.confs.forEach(c => {
-    if (r.confs.length > 1) linhas.push("*" + c.conf + "*");
-    c.seeds.forEach((x, i) => linhas.push(linhaSeed(x, i)));
-    if (c.briga.length) linhas.push("Na briga: " + c.briga.map(x => x.franquia + " " + recTxt(x)).join(", "));
-    chavePO(c, r.formato).forEach(l => linhas.push(l));
     linhas.push("");
+    if (r.confs.length > 1) linhas.push("*" + c.conf + "*");
+    c.seeds.forEach((x, i) => linhas.push((i + 1) + "º " + x.franquia + " (@" + x.gm + ") " + recTxt(x) + (r.formato === "bfa" ? "" : " · " + tagSeed(x))));
   });
-  linhas.push(r.formato === "hp" ? "Semana 17: final" : "Semana 17: Super Bowl (campeão da AFC × campeão da NFC)");
   return linhas.join("\n");
 }
 async function rodarPlayoffs(ligas, grupo, btn, status) {
@@ -5005,11 +4991,10 @@ function desenharPlayoffs(resultados) {
   const fb = el("span", { class: "copied" });
   const b1 = el("button", { class: "btn ghost", type: "button" }, "Copiar de todas");
   b1.addEventListener("click", () => copiar(resultados.filter(r => r.confs).map(textoPlayoffs).join("\n\n"), fb));
-  const regra = { bfa: "passam os 8 campeões de divisão; em cada conferência 1×4 e 2×3 na semana 15, final de conferência na 16 e Super Bowl na 17.",
-    cap: "7 por conferência (4 campeões + 3 wildcards); seed 1 folga; seeds 2 a 7 em sextangular na semana 15 (2 avançam); triangular na 16; Super Bowl na 17.",
-    hp: "7 passam (4 campeões + 3 wildcards); seed 1 folga; 2×7, 3×6, 4×5 na semana 15; na 16 o seed 1 pega o pior seed que avançar; final na 17." }[(resultados[0] || {}).formato] || "";
-  box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: "🏆 Playoffs se acabasse hoje" }), b1, fb));
-  box.appendChild(el("p", { class: "foot", text: "Regra: " + regra + " Desempate da NFL: confronto direto, campanha na divisão, jogos em comum, campanha na conferência, força da vitória e força da tabela; por último, pontos marcados. Os W.O. já zerados no Sleeper entram como derrota." }));
+  const fmt = (resultados[0] || {}).formato;
+  box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: "🏆 Classificados agora" }), b1, fb));
+  box.appendChild(el("p", { class: "foot", text: (fmt === "bfa" ? "Os campeões de cada divisão, 4 por conferência, na posição de agora (1º a 4º)."
+    : "Os 4 campeões de divisão e os 3 wildcards de cada conferência, na posição de agora (1º a 7º).") + " Desempate pelas regras da NFL; passe o dedo ou o mouse no time para ver o critério, quando houve." }));
   for (const r of resultados) {
     const fb2 = el("span", { class: "copied" });
     const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar");
@@ -5017,18 +5002,23 @@ function desenharPlayoffs(resultados) {
     const body = el("div", { class: "card-b" });
     if (r.erro) body.appendChild(el("div", { class: "status err", text: "Não deu para montar: " + r.erro + "." }));
     if (r.avisos && r.avisos.length) body.appendChild(el("div", { class: "status err", text: "Não identifiquei a franquia de: " + r.avisos.join(", ") + "." }));
-    if (r.falhas && r.falhas.length) body.appendChild(el("div", { class: "status err", text: "Não consegui ler " + r.falhas.length + " rodada(s): o desempate pode sair incompleto. " + DICA_LIMITE }));
-    (r.confs || []).forEach(c => {
-      const ul = el("ul", { class: "lst" });
-      c.seeds.forEach((x, i) => ul.appendChild(el("li", { class: x.campeao ? "neutro" : "info" }, linhaSeed(x, i))));
-      if (c.briga.length) ul.appendChild(el("li", { class: "warn" }, "Na briga: " + c.briga.map(x => nomePO(x) + " " + recTxt(x)).join(", ")));
-      chavePO(c, r.formato).forEach(l => ul.appendChild(el("li", { class: "neutro" }, el("b", { text: l.split(":")[0] + ":" }), l.slice(l.indexOf(":") + 1))));
-      if (r.confs.length > 1) body.appendChild(el("h3", { text: c.conf, style: "margin:10px 0 4px;font-size:14px" }));
-      body.appendChild(ul);
-    });
-    if (r.confs) body.appendChild(el("p", { class: "foot", text: r.formato === "hp" ? "Semana 17: final." : "Semana 17: Super Bowl, campeão da AFC × campeão da NFC." }));
+    if (r.confs) {
+      const grade = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px" });
+      r.confs.forEach(c => {
+        const col = el("div", {});
+        if (r.confs.length > 1) col.appendChild(el("div", { style: "font-weight:700;margin:0 0 6px", text: c.conf }));
+        c.seeds.forEach((x, i) => {
+          const notas = [x.motivoDiv && "divisão por " + x.motivoDiv, x.motivoSeed && "posição por " + x.motivoSeed].filter(Boolean);
+          col.appendChild(el("div", { style: "display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)", title: notas.length ? "Desempate: " + notas.join("; ") : "" },
+            el("span", { class: "pill " + (i === 0 ? "ok" : x.campeao ? "info" : "warn"), style: "min-width:34px;text-align:center;font-weight:700", text: (i + 1) + "º" }),
+            el("span", {}, el("b", { text: x.franquia }), el("span", { class: "foot", text: " @" + x.gm + " · " + recTxt(x) + " · " + tagSeed(x) + (notas.length ? " · desempate" : "") }))));
+        });
+        grade.appendChild(col);
+      });
+      body.appendChild(grade);
+    }
     box.appendChild(el("article", { class: "card" },
-      el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }), el("div", { class: "foot", text: r.jogados ? "campanhas após a semana " + r.jogados : "" })), el("div", { class: "toolbar" }, bc, fb2)), body));
+      el("div", { class: "card-h" }, el("div", {}, el("h2", { text: r.liga.nome }), el("div", { class: "foot", text: r.jogados ? "após a semana " + r.jogados : "" })), el("div", { class: "toolbar" }, bc, fb2)), body));
   }
 }
 
