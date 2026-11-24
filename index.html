@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 a (mensagem de W.O. curta; sem QB olha bye no elenco e QB livre na waiver)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 b (mensagem de W.O. curta; sem QB olha bye no elenco e QB livre na waiver)</p>
 </div>
 
 <script>
@@ -4228,10 +4228,10 @@ function avaliarTerca(liga, dados, ctx) {
       } else if (qbByeElenco && rosters.length >= 32) {
         descartados.push("Jogou sem QB (" + comeco + "), mas o QB do elenco na rodada, " + quemN(ctx.players[qbByeElenco]) + ", estava de bye: em liga de 32 não é irregular.");
       } else {
-        // QB livre na waiver que jogou a rodada (fora de todos os elencos da liga naquela semana, com 10 passes ou mais)
+        // QB livre na waiver que foi titular na rodada (fora de todos os elencos da liga naquela semana; reserva que entrou no meio do jogo não conta)
         const noElenco = new Set(); (matchups || []).forEach(mm => (mm && mm.players || []).forEach(id => noElenco.add(id))); rosters.forEach(rr => (rr.players || []).forEach(id => noElenco.add(id)));
         const sc = (league && league.scoring_settings) || {};
-        const livres = ctx.Ssem ? Object.keys(ctx.Ssem).filter(id => !noElenco.has(id) && ctx.players[id] && ehQB(ctx.players[id]) && (ctx.Ssem[id].pass_att || 0) >= 10)
+        const livres = ctx.Ssem ? Object.keys(ctx.Ssem).filter(id => !noElenco.has(id) && ctx.players[id] && ehQB(ctx.players[id]) && (ctx.Ssem[id].gs != null ? ctx.Ssem[id].gs >= 1 : (ctx.Ssem[id].pass_att || 0) >= 15))
           .map(id => ({ id, f: pontosNaLiga(ctx.Ssem[id], sc) })).sort((a, b) => b.f - a.f) : null;
         if (livres && livres.length) {
           grave = true;
