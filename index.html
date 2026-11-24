@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 b (mensagem de W.O. curta; sem QB olha bye no elenco e QB livre na waiver)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 c (mensagem de W.O. curta; sem QB olha bye no elenco e QB livre na waiver)</p>
 </div>
 
 <script>
@@ -4411,7 +4411,7 @@ function desenharTerca(resultados, ctx) {
     b3.addEventListener("click", () => {
       const txt = linhasRegistro(naPlanilha, ctx);
       if (!txt) { fb.textContent = "Nada para a planilha nesta semana (nenhum W.O. nem escalação irregular marcada)."; clearTimeout(fb._t); fb._t = setTimeout(() => { fb.textContent = ""; }, 6000); return; }
-      copiar(txt, fb, "Na aba Registro, clique na célula Semana (coluna A) da primeira linha vazia e cole.");
+      copiar(txt, fb, "Agora é só colar: abra a planilha, aba Registro, toque na primeira linha vazia da coluna A (Semana) e cole. Nada vai para a planilha sozinho.");
     });
   }
   // com a planilha ligada, os W.O. vão direto para a aba Registro
