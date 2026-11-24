@@ -99,6 +99,8 @@ ul.lst li.warn { background: var(--warn-soft); border-color: var(--warn); }
 ul.lst li.info { background: var(--info-soft); border-color: var(--info); }
 ul.lst li.neutro { background: var(--surface); border-color: var(--line); color: var(--ink); }
 .pill.info { background: var(--info-soft); color: var(--info); }
+/* joinha verde: o 👍 amarelo girado para o verde (vaga garantida nos playoffs) */
+.joinha { display: inline-block; margin-left: 4px; filter: hue-rotate(75deg) saturate(1.6); cursor: help; }
 .gm { font-weight: 700; }
 .foot { font-size: 12.5px; color: var(--muted); }
 details.all summary { cursor: pointer; font-size: 13px; color: var(--muted); }
@@ -4932,7 +4934,21 @@ function ordenarPO(lista, tipo, D) {
   }
   return out;
 }
+// "div" = título da divisão garantido; "vaga" = vaga garantida (wildcard); null = ainda pode ficar de fora.
+// Conta como ameaça todo rival que, ganhando todos os jogos que faltam, chega ao menos ao empate com o time perdendo todos.
+// Sem a divisão garantida, ficam à frente no pior caso: 1 campeão por divisão + os não campeões que podem alcançá-lo
+// (em cada divisão, quem pode alcançá-lo menos 1, que seria o campeão). Se isso não chega ao número de vagas, a vaga é dele.
+function garantiuVaga(a, daConf, divs, vagas, nWc, faltam) {
+  if (faltam <= 0) return a.campeao ? "div" : "vaga";   // temporada regular acabou: a classificação de agora é a final
+  const sc = x => x.w + x.t / 2;
+  const ameaca = y => y !== a && sc(y) + faltam >= sc(a);
+  if (!daConf.some(y => y.div === a.div && ameaca(y))) return "div";
+  if (!nWc) return null;   // BFA: só passam os campeões de divisão
+  const naFrente = divs.length + divs.reduce((s, d) => s + Math.max(0, daConf.filter(y => y.div === d && ameaca(y)).length - 1), 0);
+  return naFrente < vagas ? "vaga" : null;
+}
 function classificarPO(D, formato) {
+  const faltam = Math.max(0, (D.inicioPo || 15) - 1 - (D.jogados || 0));
   const confs = [...new Set(D.times.map(x => x.conf))].sort();
   return confs.map(conf => {
     const daConf = D.times.filter(x => x.conf === conf);
@@ -4944,6 +4960,8 @@ function classificarPO(D, formato) {
     const seeds = seedsCamp.concat(resto.slice(0, nWc));
     const fora = resto.slice(nWc);
     const ultimo = seeds[seeds.length - 1];
+    // vaga garantida: segue classificado mesmo perdendo tudo o que falta, com os rivais ganhando tudo (empate conta contra)
+    seeds.forEach(x => { x.garantido = garantiuVaga(x, daConf, divs, seeds.length, nWc, faltam); });
     // na briga: quem está a até 1 jogo de entrar (pela liderança da própria divisão ou pela última vaga de wildcard)
     const atras = (a, x) => ((a.w - x.w) + (x.l - a.l)) / 2;
     const briga = fora.filter(x => {
@@ -4960,8 +4978,9 @@ function textoPlayoffs(r) {
   r.confs.forEach(c => {
     linhas.push("");
     if (r.confs.length > 1) linhas.push("*" + c.conf + "*");
-    c.seeds.forEach((x, i) => linhas.push((i + 1) + "º " + x.franquia + " (@" + x.gm + ") " + recTxt(x) + (r.formato === "bfa" ? "" : " · " + tagSeed(x))));
+    c.seeds.forEach((x, i) => linhas.push((i + 1) + "º " + x.franquia + " (@" + x.gm + ") " + recTxt(x) + (r.formato === "bfa" ? "" : " · " + tagSeed(x)) + (x.garantido ? " 👍" : "")));
   });
+  if (r.confs.some(c => c.seeds.some(x => x.garantido))) linhas.push("", "👍 = vaga garantida");
   return linhas.join("\n");
 }
 async function rodarPlayoffs(ligas, grupo, btn, status) {
@@ -4993,7 +5012,7 @@ function desenharPlayoffs(resultados) {
   const fmt = (resultados[0] || {}).formato;
   box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: "🏆 Classificados agora" }), b1, fb));
   box.appendChild(el("p", { class: "foot", text: (fmt === "bfa" ? "Os campeões de cada divisão, 4 por conferência, na posição de agora (1º a 4º)."
-    : "Os 4 campeões de divisão e os 3 wildcards de cada conferência, na posição de agora (1º a 7º).") + " Desempate pelas regras da NFL; passe o dedo ou o mouse no time para ver o critério, quando houve." }));
+    : "Os 4 campeões de divisão e os 3 wildcards de cada conferência, na posição de agora (1º a 7º).") + " 👍 = vaga garantida: segue classificado mesmo perdendo todos os jogos que faltam. Desempate pelas regras da NFL; passe o dedo ou o mouse no time para ver o critério, quando houve." }));
   for (const r of resultados) {
     const fb2 = el("span", { class: "copied" });
     const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar");
@@ -5010,7 +5029,9 @@ function desenharPlayoffs(resultados) {
           const notas = [x.motivoDiv && "divisão por " + x.motivoDiv, x.motivoSeed && "posição por " + x.motivoSeed].filter(Boolean);
           col.appendChild(el("div", { style: "display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)", title: notas.length ? "Desempate: " + notas.join("; ") : "" },
             el("span", { class: "pill " + (i === 0 ? "ok" : x.campeao ? "info" : "warn"), style: "min-width:34px;text-align:center;font-weight:700", text: (i + 1) + "º" }),
-            el("span", {}, el("b", { text: x.franquia }), el("span", { class: "foot", text: " @" + x.gm + " · " + recTxt(x) + " · " + tagSeed(x) + (notas.length ? " · desempate" : "") }))));
+            el("span", {}, el("b", { text: x.franquia }),
+              x.garantido ? el("span", { class: "joinha", text: "👍", title: x.garantido === "div" && r.formato !== "bfa" ? "Vaga garantida, já como campeão da divisão" : "Vaga garantida" }) : "",
+              el("span", { class: "foot", text: " @" + x.gm + " · " + recTxt(x) + " · " + tagSeed(x) + (notas.length ? " · desempate" : "") }))));
         });
         grade.appendChild(col);
       });
