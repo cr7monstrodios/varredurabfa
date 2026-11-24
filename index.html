@@ -5011,8 +5011,9 @@ function desenharPlayoffs(resultados) {
   b1.addEventListener("click", () => copiar(resultados.filter(r => r.confs).map(textoPlayoffs).join("\n\n"), fb));
   const fmt = (resultados[0] || {}).formato;
   box.appendChild(el("div", { class: "summary" }, el("span", { class: "count", text: "🏆 Classificados agora" }), b1, fb));
-  box.appendChild(el("p", { class: "foot", text: (fmt === "bfa" ? "Os campeões de cada divisão, 4 por conferência, na posição de agora (1º a 4º)."
-    : "Os 4 campeões de divisão e os 3 wildcards de cada conferência, na posição de agora (1º a 7º).") + " 👍 = vaga garantida: segue classificado mesmo perdendo todos os jogos que faltam. Desempate pelas regras da NFL; passe o dedo ou o mouse no time para ver o critério, quando houve." }));
+  box.appendChild(el("p", { class: "foot" }, (fmt === "bfa" ? "Os campeões de cada divisão, 4 por conferência, na posição de agora (1º a 4º)."
+    : "Os 4 campeões de divisão e os 3 wildcards de cada conferência, na posição de agora (1º a 7º).") + " ", el("span", { class: "joinha", style: "margin-left:0", text: "👍" }),
+    " = vaga garantida: segue classificado mesmo perdendo todos os jogos que faltam. Desempate pelas regras da NFL; passe o dedo ou o mouse no time para ver o critério, quando houve."));
   for (const r of resultados) {
     const fb2 = el("span", { class: "copied" });
     const bc = el("button", { class: "btn ghost", type: "button" }, "Copiar");
