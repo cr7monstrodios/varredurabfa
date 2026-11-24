@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 23/11/2026 d (playoffs se a temporada acabasse hoje)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 a (mensagem de W.O. curta; sem QB olha bye no elenco e QB livre na waiver)</p>
 </div>
 
 <script>
@@ -4186,43 +4186,69 @@ function avaliarTerca(liga, dados, ctx) {
     // opções do banco: "Tommy Tremble (TE, CAR, fez 9,8) ou Feleipe Franks (TE, ATL, fez 2,0)"
     const txtOp = ids => { const dois = ids.slice(0, 2).filter((b, i) => !i || (pts(b) || 0) > 0);   // a 2ª opção só se pontuou
       return dois.map(b => quemN(ctx.players[b], pts(b) != null ? "fez " + num(pts(b)) : "")).join(" ou "); };
-    const txtOpCurto = ids => ids.slice(0, 2).filter((b, i) => !i || (pts(b) || 0) > 0).map(b => quemN(ctx.players[b])).join(" ou ");
+    // mensagem do grupo: só o jogador, a média e os pontos ("Bo Melton (WR, GB) média 7,1, fez 9,8")
+    const med = dados.medias || {};
+    const jmc = (id, media) => { const p = ctx.players[id], mm = media != null ? media : med[id];
+      return quemN(p) + [mm != null ? " média " + num(mm) : "", pts(id) != null ? (mm != null ? "," : "") + " fez " + num(pts(id)) : ""].join(""); };
+    const txtOpCurto = ids => "banco: " + jmc(ids[0]);
     const ehQB = p => posDe(p).includes("QB");
     const jogaria = (id, p) => { if (!p || !p.team || (ctx.cal[p.team] || "normal") === "bye") return false; const s = ctx.statusDe(id, p); return !s || s === "Questionable"; };
     // titulares que não jogaram (cada um vira o começo de uma frase)
     const naoJogou = [];
     titulares.forEach((id, i) => {
       const slot = rp[i];
-      if (!id || id === "0") { const v = "a vaga de " + (slot ? (SLOT_NOME[slot] || slot) : "titular") + " ficou vazia"; naoJogou.push({ i, slot, vazio: true, txt: v, curto: v }); return; }
+      if (!id || id === "0") { const v = "a vaga de " + (slot ? (SLOT_NOME[slot] || slot) : "titular") + " ficou vazia"; naoJogou.push({ i, slot, vazio: true, txt: v, curto: "vaga de " + (slot ? (SLOT_NOME[slot] || slot) : "titular") + " vazia" }); return; }
       const p = ctx.players[id]; if (!p) return;
       const est = p.team ? (ctx.cal[p.team] || "normal") : "semtime";
       const quem = (p.team && p.team === sig ? "o franchise " : "") + quemN(p);
-      if (est === "semtime") { naoJogou.push({ i, slot, id, p, txt: quem + " estava sem time", curto: quemN(p) + " estava sem time" }); return; }
-      if (est === "bye") { naoJogou.push({ i, slot, id, p, txt: quem + " estava de bye", curto: quemN(p) + " estava de bye", isento: rosters.length >= 32 && ehQbOuK(p) }); return; }
+      if (est === "semtime") { naoJogou.push({ i, slot, id, p, txt: quem + " estava sem time", curto: quemN(p) + " sem time" }); return; }
+      if (est === "bye") { naoJogou.push({ i, slot, id, p, txt: quem + " estava de bye", curto: quemN(p) + " de bye", isento: rosters.length >= 32 && ehQbOuK(p) }); return; }
       const s = ctx.statusDe(id, p);
       if (s && s !== "Questionable" && !(wo && p.team === sig))
-        naoJogou.push({ i, slot, id, p, txt: quem + " estava " + situacaoN(s) + " na varredura", curto: quemN(p) + " estava " + situacaoN(s) });
+        naoJogou.push({ i, slot, id, p, txt: quem + " estava " + situacaoN(s) + " na varredura", curto: quemN(p) + " " + situacaoN(s) });
     });
     // 1) sem QB: nenhum QB titular jogou numa liga que tem vaga de QB (grave mesmo sem QB no banco).
     //    Em liga de 32 times, QB de bye não é irregular: todo time tem o seu QB de bye em alguma rodada.
+    //    Sem QB no banco para jogar, também não é grave se o QB do elenco naquela semana estava de bye (liga de 32; o elenco é o da rodada,
+    //    então vale mesmo que o GM já tenha dispensado o QB de bye depois) ou se não havia QB livre na waiver que tenha jogado a rodada.
     let grave = false;
     const naVagaQB = naoJogou.filter(x => x.slot === "QB");
     const soByeEm32 = rosters.length >= 32 && naVagaQB.length > 0 && naVagaQB.every(x => x.isento);
     if (!soByeEm32 && rp.slice(0, titulares.length).includes("QB") && !titulares.some(id => id && id !== "0" && ctx.players[id] && ehQB(ctx.players[id]) && jogaria(id, ctx.players[id]))) {
-      grave = true;
       const naVaga = naVagaQB;
       naVaga.forEach(x => { x.feito = true; });
-      const ops = opcoesPara("QB"); if (ops.length) usadosB.add(ops[0]);
-      alertas.push("🚨 Jogou sem QB, que é posição premium (delito grave): " + (naVaga.length ? juntarN(naVaga.map(x => x.txt)) : "nenhum QB titular entrou em campo") +
-        (ops.length ? ", mesmo com " + txtOp(ops) + " no banco." : ", e não tinha QB no banco."));
-      curtos.push("🚨 Jogou sem QB (delito grave): " + (naVaga.length ? juntarN(naVaga.map(x => x.curto)) : "nenhum QB titular jogou") +
-        (ops.length ? "; no banco tinha " + txtOpCurto(ops) + "." : "; não tinha QB no banco."));
+      const comeco = naVaga.length ? juntarN(naVaga.map(x => x.txt)) : "nenhum QB titular entrou em campo";
+      const comecoC = naVaga.length ? naVaga.map(x => x.curto).join(", ") : "nenhum QB titular jogou";
+      const ops = opcoesPara("QB");
+      const qbByeElenco = [...new Set(m.players || r.players || [])].find(id => ctx.players[id] && ehQB(ctx.players[id]) && ctx.players[id].team && (ctx.cal[ctx.players[id].team] || "normal") === "bye");
+      if (ops.length) {
+        grave = true; usadosB.add(ops[0]);
+        alertas.push("🚨 Jogou sem QB, que é posição premium (delito grave): " + comeco + ", mesmo com " + txtOp(ops) + " no banco.");
+        curtos.push("🚨 sem QB (" + comecoC + ") · " + txtOpCurto(ops));
+      } else if (qbByeElenco && rosters.length >= 32) {
+        descartados.push("Jogou sem QB (" + comeco + "), mas o QB do elenco na rodada, " + quemN(ctx.players[qbByeElenco]) + ", estava de bye: em liga de 32 não é irregular.");
+      } else {
+        // QB livre na waiver que jogou a rodada (fora de todos os elencos da liga naquela semana, com 10 passes ou mais)
+        const noElenco = new Set(); (matchups || []).forEach(mm => (mm && mm.players || []).forEach(id => noElenco.add(id))); rosters.forEach(rr => (rr.players || []).forEach(id => noElenco.add(id)));
+        const sc = (league && league.scoring_settings) || {};
+        const livres = ctx.Ssem ? Object.keys(ctx.Ssem).filter(id => !noElenco.has(id) && ctx.players[id] && ehQB(ctx.players[id]) && (ctx.Ssem[id].pass_att || 0) >= 10)
+          .map(id => ({ id, f: pontosNaLiga(ctx.Ssem[id], sc) })).sort((a, b) => b.f - a.f) : null;
+        if (livres && livres.length) {
+          grave = true;
+          const q = livres[0], pq = ctx.players[q.id];
+          alertas.push("🚨 Jogou sem QB, que é posição premium (delito grave): " + comeco + ", e não tinha QB no banco, mas tinha na waiver " + quemN(pq, "fez " + num(q.f)) +
+            (livres[1] ? " ou " + quemN(ctx.players[livres[1].id], "fez " + num(livres[1].f)) : "") + ".");
+          curtos.push("🚨 sem QB (" + comecoC + ") · waiver: " + quemN(pq) + " fez " + num(q.f));
+        } else if (livres) descartados.push("Jogou sem QB (" + comeco + "), mas não tinha QB no banco nem QB livre na waiver que tenha jogado a rodada.");
+        else { grave = true; alertas.push("🚨 Jogou sem QB, que é posição premium (delito grave): " + comeco + ", e não tinha QB no banco (não consegui conferir a waiver).");
+          curtos.push("🚨 sem QB (" + comecoC + ")"); }
+      }
     }
     // 3) quem não jogou: só conta com opção no banco para a vaga
     naoJogou.filter(x => !x.feito && !x.isento).forEach(x => {
       const ops = opcoesPara(x.slot, x.p);
       if (ops.length) { usadosB.add(ops[0]); alertas.push(maiuscula(x.txt) + (x.vazio ? "" : " e ficou como titular") + ", mesmo com " + txtOp(ops) + " no banco.");
-        curtos.push(maiuscula(x.curto) + "; no banco tinha " + txtOpCurto(ops) + "."); }
+        curtos.push(maiuscula(x.curto) + " · " + txtOpCurto(ops)); }
       else descartados.push(maiuscula(x.txt) + ", mas não tinha opção no banco.");
     });
     // 2) e 3) reservas fortes apontados na varredura oficial que continuaram no banco
@@ -4236,7 +4262,7 @@ function avaliarTerca(liga, dados, ctx) {
       const quem = pB ? quemN(pB) : x.nome;
       // sem os pontos da rodada no Sleeper não dá para conferir: fica o alerta, avisando
       if (!temPontos) { reservaForte = true; alertas.push(quem + ", apontado na varredura como reserva forte (média " + num(x.media || 0) + "), ficou no banco; o Sleeper ainda não trouxe os pontos da rodada para conferir.");
-        curtos.push(quem + " ficou no banco."); return; }
+        curtos.push("banco: " + quem + " média " + num(x.media || 0)); return; }
       // o titular que ele substituiria: o apontado na varredura; se não houver (varredura antiga), o que menos pontuou numa vaga em que ele cabe e podia sair.
       // Franchise que, se saísse, deixaria o time abaixo do mínimo (W.O.) não podia sair, a não ser trocado por outro franchise do banco.
       const franqB = !!(pB && pB.team === sig);
@@ -4258,14 +4284,14 @@ function avaliarTerca(liga, dados, ctx) {
         reservaForte = true;
         alertas.push((franqB ? "O franchise " + quem : maiuscula(quem)) + ", com média " + num(x.media) + ", ficou no banco e fez " + num(feitos) + ", mais que " + comoTit + ", que fez " + num(fT) + "." +
           (entreFranchises ? " A troca era entre franchises, sem risco de W.O." : ""));
-        curtos.push(quemN(pT) + " jogou com " + quem + " no banco.");
+        curtos.push(jmc(tId, x.mediaTit) + " · banco: " + jmc(x.id, x.media));
         return;
       }
       // média alta, mas pontuou mal (ou não mais que o titular): vai para a análise e os comissários decidem
       reservaMedia = true;
       alertas.push((franqB ? "O franchise " + quem : maiuscula(quem)) + ", com média " + num(x.media || 0) + ", ficou no banco enquanto " + comoTit +
         (x.mediaTit != null ? ", com média " + num(x.mediaTit) + "," : "") + " jogou. Na rodada, " + nomeNatural(pB) + " fez " + num(feitos) + " e " + nomeNatural(pT) + " fez " + num(fT) + ".");
-      curtos.push(quemN(pT) + " jogou com " + quem + " no banco.");
+      curtos.push(jmc(tId, x.mediaTit) + " · banco: " + jmc(x.id, x.media));
     });
     const formacao = liga.formacao ? avaliarFormacao(league, titulares, ctx.players) : null;
     if (formacao && !formacao.ok) { alertas.push(descFormacao(formacao)); curtos.push(descFormacao(formacao)); }
@@ -4286,6 +4312,12 @@ function fraseWO(t, comCampanha = false, min = null) {
   return quemTerca(t, comCampanha) + (ruins.length ? " ficou com " + n + abaixo + ", porque " + juntarN(ruins) + " na varredura." : " escalou só " + n + abaixo + ".") +
     (t.avisado ? " Foi avisado na varredura." : "") + (t.nWO ? " " + fraseNumWO(t.nWO) : "");
 }
+// W.O. na mensagem do grupo, curto: "@gm (Texans): 6 de 7 franchises (Reed Blankenship OUT), avisado · 1º W.O.: derrota da partida"
+function woCurto(t, min) {
+  const ruins = t.jogadores.filter(j => !j.conta).map(j => String(j.nomeN || j.nome).replace(/ \(.*\)$/, "") + " " + (SITUACAO_N[j.status] || j.status).replace(/^em /, ""));
+  return "@" + t.gm + " (" + t.franquia + "): " + t.validos + " de " + min + " franchises" + (ruins.length ? " (" + ruins.join(", ") + ")" : "") + (t.avisado ? ", avisado" : "") +
+    (t.nWO ? " · " + t.nWO + "º W.O.: " + ESCADA_WO_N[Math.min(t.nWO, 5) - 1] : "");
+}
 // escalações irregulares marcadas pelos comissários na terça (guardadas neste aparelho, por semana)
 const chaveIrr = semana => "bfa-irr-" + temporadaAtual() + "-" + semana;
 const irregularMarcada = (semana, ligaId, franquia) => ((armazenar.get(chaveIrr(semana)) || {})[ligaId] || []).includes(franquia);
@@ -4298,10 +4330,10 @@ const irregularesDa = (res, ctx) => res.times.filter(t => t.alertas && t.alertas
 function mensagemWO(res, ctx) {
   const L = res.liga; const wo = res.times.filter(t => t.wo); const irr = irregularesDa(res, ctx);
   const linhas = ["*W.O. SEMANA " + ctx.semana + " — " + L.nome.toUpperCase() + "* (mínimo " + L.min + " franchises)", ""];
-  if (wo.length) { linhas.push("❌ W.O.:"); wo.forEach(t => linhas.push("• " + fraseWO(t, false, L.min))); }
+  if (wo.length) { linhas.push("❌ W.O.:"); wo.forEach(t => linhas.push("• " + woCurto(t, L.min))); }
   else linhas.push("✅ Nenhum W.O. nesta semana.");
   linhas.push("");
-  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + emFrases(t.curtos && t.curtos.length ? t.curtos : t.alertas) + (t.nEI ? " " + fraseNumEI(t.nEI) : ""))); linhas.push(""); }
+  if (irr.length) { linhas.push("⚠️ Escalação irregular:"); irr.forEach(t => linhas.push("• @" + t.gm + " (" + t.franquia + "): " + (t.curtos && t.curtos.length ? t.curtos.join("; ") : emFrases(t.alertas)) + (t.nEI ? " · " + t.nEI + "ª EI" : ""))); linhas.push(""); }
   const bye = res.times.filter(t => t.bye).map(t => t.franquia).sort();
   if (bye.length) linhas.push("Bye (isentos): " + bye.join(", "));
   linhas.push("Conferência feita em " + ctx.quando);
@@ -4707,13 +4739,16 @@ async function rodarTerca(ligas, grupo, semana, btn, status) {
     if (semJogos) avisosSnap.push("A semana " + semana + " ainda não tem jogos encerrados no Sleeper. A conferência de terça é da rodada que acabou: confira a semana escolhida.");
     else if (erroTimes) avisosSnap.push("Não consegui ler o time de cada jogador na rodada (" + erroTimes + ")" + (usar ? ": usei o time guardado na varredura oficial." : ": usei o time atual, então quem foi trocado depois da rodada pode contar errado."));
     if (usar && !(timesR && !semJogos)) fontes.push("time de cada jogador: o da varredura oficial");
-    const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas, fontes, trocados };
+    const Ssem = await statsDaSemana(temporadaAtual(), semana).catch(() => null);   // quem jogou na rodada (QB livre na waiver)
+    const ctx = { semana, cal, players, statusDe, quando, flags, avisosSnap, reservas, fontes, trocados, Ssem };
     const resultados = []; let feitas = 0;
     await Promise.all(ligas.map(async (liga) => {
       try {
         const [league, users, rosters, matchups] = await Promise.all([getJSON("/league/" + liga.id), getJSON("/league/" + liga.id + "/users"),
           getJSON("/league/" + liga.id + "/rosters"), getJSON("/league/" + liga.id + "/matchups/" + semana).catch(() => [])]);
-        resultados.push(avaliarTerca(liga, { league, users, rosters, matchups }, ctx));
+        // média de cada jogador nas rodadas anteriores (vai na mensagem do grupo)
+        const medias = semana > 1 ? mediasDaLiga((await rodadasAnteriores(liga.id, semana - 1, [])).map(x => x || [])) : {};
+        resultados.push(avaliarTerca(liga, { league, users, rosters, matchups, medias }, ctx));
       } catch (e) { resultados.push({ liga, times: [], avisos: [], erro: "Não consegui ler esta liga: " + e.message }); }
       feitas++; status("Lendo ligas… " + feitas + "/" + ligas.length);
     }));
