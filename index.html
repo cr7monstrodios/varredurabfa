@@ -321,7 +321,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 c (mensagem de W.O. curta; sem QB olha bye no elenco e QB livre na waiver)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 d (semana 11 no histórico; mensagem copiada vai direto para a planilha quando ligada)</p>
 </div>
 
 <script>
@@ -4061,7 +4061,7 @@ function textoDefesas(res) {
 // Histórico do Registro da planilha (semana, liga, time, tipo e, se for o caso, "GM trocado"; sem os anulados). Linha sem semana = migrada da planilha antiga, conta como anterior.
 // Troca de GM (regra): as escalações irregulares do GM anterior deixam de valer e os W.O. dele contam como 1 só.
 // REGISTRO_INICIO
-const REGISTRO_WO_EI = { em: "17/11/2026", linhas: [
+const REGISTRO_WO_EI = { em: "24/11/2026", linhas: [
   [null, "BFA Franchise", "Buccaneers", "WO"],
   [null, "BFA Franchise", "Panthers", "Escalação irregular"],
   [null, "BFA Sloucos", "Commanders", "WO"],
@@ -4124,7 +4124,25 @@ const REGISTRO_WO_EI = { em: "17/11/2026", linhas: [
   [10, "BFA XFL", "Falcons", "Escalação irregular"],
   [10, "BFA John Randle", "Cowboys", "Escalação irregular"],
   [10, "BFA BGL", "Texans", "WO"],
-  [10, "BFA BGL", "Titans", "WO"]
+  [10, "BFA BGL", "Titans", "WO"],
+  [11, "BFA Franchise", "Ravens", "WO"],
+  [11, "BFA Franchise", "Packers", "Escalação irregular"],
+  [11, "BFA Franchise", "Chargers", "Escalação irregular"],
+  [11, "BFA Franchise", "Bears", "Escalação irregular"],
+  [11, "BFA Franchise", "Jets", "Escalação irregular"],
+  [11, "BFA Sloucos", "Titans", "WO"],
+  [11, "BFA Lucky", "Eagles", "Escalação irregular"],
+  [11, "BFA New Gen", "Dolphins", "WO"],
+  [11, "BFA New Gen", "Browns", "Escalação irregular"],
+  [11, "BFA Indiana Jones", "Patriots", "Escalação irregular"],
+  [11, "BFA Indiana Jones", "Lions", "Escalação irregular"],
+  [11, "BFA XFL", "Buccaneers", "WO"],
+  [11, "BFA XFL", "Browns", "Escalação irregular"],
+  [11, "BFA XFL", "Niners", "Escalação irregular"],
+  [11, "BFA John Randle", "Patriots", "Escalação irregular"],
+  [11, "BFA BGL", "Chargers", "WO"],
+  [11, "BFA BGL", "Ravens", "Escalação irregular"],
+  [11, "BFA BGL", "Falcons", "Escalação irregular"]
 ] };
 // REGISTRO_FIM
 const normReg = x => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -4258,6 +4276,7 @@ function avaliarTerca(liga, dados, ctx) {
     let reservaForte = false, reservaMedia = false;
     const temPontos = !!(m.players_points && Object.keys(m.players_points).length);
     ficaram.forEach(x => {
+      if (usadosB.has(x.id)) return;   // já citado como opção do banco para quem não jogou (não repete o mesmo reserva)
       const pB = ctx.players[x.id]; const feitos = pts(x.id) || 0;
       const quem = pB ? quemN(pB) : x.nome;
       // sem os pontos da rodada no Sleeper não dá para conferir: fica o alerta, avisando
@@ -4355,12 +4374,11 @@ function textoAlertas(resultados, ctx, titulo) {
 function linhasLancar(resultados, ctx) {
   const out = [];
   for (const r of resultados) for (const t of r.times) if (t.wo) {
-    const ruins = t.jogadores.filter(j => !j.conta).map(j => j.nome + " ESTAVA " + (NAO_CONTA[j.status] || String(j.status).toUpperCase()));
     out.push({ liga: r.liga.nome, time: t.franquia, tipo: "WO", gm: t.gm, escaladas: t.validos,
-      detalhe: (ruins.length ? juntar(ruins) + " NA VARREDURA" : t.validos + " FRANCHISES ESCALADAS") + (t.avisado ? " (avisado na varredura)" : "") });
+      detalhe: woCurto(Object.assign({}, t, { nWO: 0 }), r.liga.min).replace(/^@\S+ \([^)]*\): /, "") });
   }
   if (ctx) for (const r of resultados) for (const t of irregularesDa(r, ctx))
-    out.push({ liga: r.liga.nome, time: t.franquia, tipo: "Escalação irregular", gm: t.gm, detalhe: emFrases(t.alertas) });
+    out.push({ liga: r.liga.nome, time: t.franquia, tipo: "Escalação irregular", gm: t.gm, detalhe: t.curtos && t.curtos.length ? t.curtos.join("; ") : emFrases(t.alertas) });
   return out;
 }
 function rotuloLancar(linhas) {
@@ -4386,6 +4404,20 @@ async function lancarRegistro(ctx, linhas, b, msg) {
     msg.textContent = e.message === "senha" ? "Falta a senha neste aparelho: digite na aba Varreduras oficiais." : "Não consegui lançar: " + e.message + ".";
   }
 }
+// mensagem do grupo copiada = conferência finalizada: com a planilha ligada neste aparelho, as linhas vão sozinhas para o Registro
+// (a planilha não repete o que já estiver lá; sem a planilha ligada, nada muda e segue o botão 📊 para colar)
+async function lancarAuto(ctx, linhas, alvo) {
+  if (!urlPlanilha() || !chaveGravacao() || !linhas.length) return;
+  alvo.className = "status"; alvo.textContent = "Mandando para a planilha…";
+  try {
+    const r = await planilha("lancarWO", { semana: ctx.semana, linhas, quem: nomeComissario(), anunciado: true });
+    alvo.textContent = "Planilha ✓ " + r.inseridas + (r.inseridas === 1 ? " linha nova" : " linhas novas") + (r.repetidas ? ", " + r.repetidas + " já " + (r.repetidas > 1 ? "estavam" : "estava") + " lá" : "") + ".";
+    if (r.inseridas) ctx.woLancado = "W.O. e irregulares lançados no Registro ✓";
+  } catch (e) {
+    alvo.className = "status err";
+    alvo.textContent = "Não mandei para a planilha (" + (e.message === "senha" ? "falta a senha neste aparelho" : e.message) + "): use o 📊 para colar.";
+  }
+}
 function linhasRegistro(resultados, ctx) {
   const out = [];
   for (const r of resultados) {
@@ -4400,7 +4432,8 @@ function desenharTerca(resultados, ctx) {
   const totAl = resultados.reduce((s, r) => s + r.times.filter(t => t.alertas.length).length, 0);
   const fb = el("span", { class: "copied" });
   const b1 = el("button", { class: "btn ghost", type: "button" }, "💬 Copiar mensagem do grupo (todas)");
-  b1.addEventListener("click", () => copiar(resultados.map(r => mensagemWO(r, ctx)).join("\n\n"), fb));
+  const mAuto = el("span", { class: "status", role: "status" });
+  b1.addEventListener("click", () => { copiar(resultados.map(r => mensagemWO(r, ctx)).join("\n\n"), fb); lancarAuto(ctx, linhasLancar(resultados.filter(r => r.liga.grupo === "bfa"), ctx), mAuto); });
   const b2 = el("button", { class: "btn ghost", type: "button" }, "Copiar alertas (só comissários)");
   b2.addEventListener("click", () => copiar(textoAlertas(resultados, ctx, "PARA ANÁLISE DE ESCALAÇÃO IRREGULAR"), fb));
   // a planilha de controle só tem as abas das ligas BFA
@@ -4429,7 +4462,7 @@ function desenharTerca(resultados, ctx) {
     el("span", { class: "pill info", text: totAl + " times para analisar" }),
     resultados.some(r => r.times.some(t => t.grave)) ? el("span", { class: "pill wo", text: "🚨 " + resultados.reduce((s, r) => s + r.times.filter(t => t.grave).length, 0) + " sem QB (grave)" }) : null,
     el("span", { class: "pill warn", text: resultados.reduce((s, r) => s + irregularesDa(r, ctx).length, 0) + " escalação irregular marcada" }),
-    el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4));
+    el("span", { class: "pill warn", text: "🔍 " + resultados.reduce((s, r) => s + r.times.filter(t => t.reservaForte).length, 0) + " com reserva forte no banco" }), b1, b2, b3, b4, fb, m4, mAuto));
   ctx.avisosSnap.forEach(a => box.appendChild(el("p", { class: "status err", text: a })));
   if (ctx.fontes && ctx.fontes.length) box.appendChild(el("p", { class: "foot", text: "Status usados — " + ctx.fontes.join(" · ") }));
   if (resultados.some(r => r.liga.grupo === "bfa")) box.appendChild(el("p", { class: "foot", text: "Numeração de W.O. e escalação irregular (por time na liga): pelo Registro da planilha" +
@@ -4445,7 +4478,7 @@ function desenharTerca(resultados, ctx) {
     const desc = r.times.filter(t => t.descartados && t.descartados.length);
     const fb2 = el("span", { class: "copied" });
     const bc = el("button", { class: "btn ghost", type: "button" }, "💬 Copiar mensagem");
-    bc.addEventListener("click", () => copiar(mensagemWO(r, ctx), fb2));
+    bc.addEventListener("click", () => { copiar(mensagemWO(r, ctx), fb2); if (r.liga.grupo === "bfa") lancarAuto(ctx, linhasLancar([r], ctx), mAuto); });
     const body = el("div", { class: "card-b" });
     if (r.erro) body.appendChild(el("div", { class: "status err", text: r.erro }));
     if (r.avisos && r.avisos.length) body.appendChild(el("div", { class: "status err", text: "Não identifiquei a franquia de: " + r.avisos.join(", ") + "." }));
