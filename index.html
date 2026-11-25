@@ -323,7 +323,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 24/11/2026 f (playoffs: desempate por pontos feitos e joinha de vaga garantida)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 25/11/2026 a (antecipados em etapas: quarta, Ação de Graças e sexta)</p>
 </div>
 
 <script>
@@ -389,6 +389,25 @@ const ANTECIPADOS_2026 = { 1:["SF","LAR"], 2:["DET","BUF"], 3:["GB","ATL"], 4:["
   13:["KC","LAR"], 14:["MIN","NE"], 15:["SF","LAC"],
   16:["HOU","PHI","GB","CHI","BUF","DEN","LAR","SEA"],             // véspera de Natal e Natal
   17:["BAL","CIN"] };
+// Início dos jogos antecipados quando caem em dias diferentes (horário dos EUA, ET). Com o horário, a varredura antecipada
+// pode ser feita em etapas: cada uma confere só os jogos que ainda não começaram e se junta à varredura oficial anterior.
+// Semana 12 (fonte: Fox Sports): quarta GB x LAR 20h; quinta CHI x DET 13h, PHI x DAL 16h30, KC x BUF 20h20; sexta DEN x PIT 15h.
+const INICIO_ANTECIPADOS_2026 = {
+  12: { GB: "2026-11-25T20:00:00-05:00", LAR: "2026-11-25T20:00:00-05:00", CHI: "2026-11-26T13:00:00-05:00", DET: "2026-11-26T13:00:00-05:00",
+        PHI: "2026-11-26T16:30:00-05:00", DAL: "2026-11-26T16:30:00-05:00", KC: "2026-11-26T20:20:00-05:00", BUF: "2026-11-26T20:20:00-05:00",
+        DEN: "2026-11-27T15:00:00-05:00", PIT: "2026-11-27T15:00:00-05:00" } };
+const inicioDoJogo = (w, sig) => { const t = (INICIO_ANTECIPADOS_2026[w] || {})[sig]; return t ? Date.parse(t) : null; };
+// jogo antecipado que já começou; sem horário conhecido conta como já travado (como antes: todos os antecipados juntos)
+function antecipadoTravado(cal, sig, w, agora = Date.now()) {
+  if (!sig || (cal[sig] || "normal") !== "early") return false;
+  const t = inicioDoJogo(w, sig); return t == null || t <= agora;
+}
+// para a varredura antecipada: só conta como começado quando se sabe o horário
+function jaComecou(w, sig, agora = Date.now()) { const t = inicioDoJogo(w, sig); return t != null && t <= agora; }
+const horarioAntecipadosAgora = () => Object.values(INICIO_ANTECIPADOS_2026).some(m => {
+  const ts = Object.values(m).map(Date.parse), n = Date.now(); return n > Math.min(...ts) - 4 * 864e5 && n < Math.max(...ts) + 4 * 864e5; });
+const antecipadoEmBreve = () => Object.values(INICIO_ANTECIPADOS_2026).some(m => Object.values(m).map(Date.parse).some(t => t > Date.now() && t - Date.now() < 30 * 3600e3));
+
 // Status que NÃO contam para o mínimo (rótulo usado na mensagem)
 const NAO_CONTA = { Out:"OUT", IR:"IR", Doubtful:"DOUB", Sus:"SUS", NA:"NA", DNR:"DNR", PUP:"PUP", COV:"COV" };
 
@@ -705,6 +724,7 @@ function avaliarLiga(liga, dados, ctx) {
     let escopo = "verificar";
     if (estado === "bye") escopo = "bye";
     else if (ctx.modo === "early" && estado !== "early") escopo = "fora";
+    else if (ctx.modo === "early" && ctx.jaComecou && ctx.jaComecou(sig)) escopo = "fora";   // jogo já começou: vale a varredura anterior
     else if (ctx.modo === "dom" && estado === "early") escopo = "fora";
     // outros avisos (não contam para WO): spot vazio, jogador de bye, sem time, não franchise com status ruim
     const outros = [];
@@ -719,7 +739,7 @@ function avaliarLiga(liga, dados, ctx) {
         const p = ctx.players[id]; if (!p) continue;
         const nomeJ = ((p.first_name || "") + " " + (p.last_name || "")).trim().toUpperCase();
         const est = p.team ? (ctx.cal[p.team] || "normal") : "semtime";
-        if (ctx.modo === "early" ? est !== "early" : est === "early") continue;   // fora do jogo desta varredura
+        if (ctx.modo === "early" ? (est !== "early" || (ctx.jaComecou && ctx.jaComecou(p.team))) : est === "early") continue;   // fora do jogo desta varredura
         if (est === "semtime") { outros.push(nomeJ + " ESTÁ SEM TIME"); continue; }
         if (est === "bye") { if (!(liga32 && ehQbOuK(p))) outros.push(nomeJ + " ESTÁ DE BYE"); continue; }
         if (p.team === sig) continue;                                              // franchise: já está na parte de cima
@@ -729,7 +749,7 @@ function avaliarLiga(liga, dados, ctx) {
     }
     let banco = [], reservas = [];
     if (ctx.banco && dados.medias) {
-      const noEscopo = p => ctx.modo === "early" ? (ctx.cal[p.team] || "normal") === "early" : (ctx.cal[p.team] || "normal") !== "early";
+      const noEscopo = p => ctx.modo === "early" ? (ctx.cal[p.team] || "normal") === "early" && !(ctx.jaComecou && ctx.jaComecou(p.team)) : (ctx.cal[p.team] || "normal") !== "early";
       reservas = sugestoesBanco(r, titulares, { ...ctx, liga32: rosters.length >= 32, formacao: !!liga.formacao || ligaFormacao(league && league.name) }, dados.medias, noEscopo, sig, Math.max(0, validos - liga.min), league && league.roster_positions);
       banco = reservas.map(x => x.txt);
     }
@@ -849,7 +869,7 @@ function desenharResultado(resultados, ctx) {
   let bOficial = null, msgOficial = null;
   if (ctx.oficial) {
     msgOficial = el("span", { class: "status", role: "status" });
-    bOficial = el("button", { class: "btn ghost", type: "button" }, ctx.oficialFeita || "Marcar como varredura oficial");
+    bOficial = el("button", { class: "btn ghost", type: "button" }, ctx.oficialFeita || (ctx.oficial.parcial ? "Juntar à varredura oficial antecipada" : "Marcar como varredura oficial"));
     bOficial.disabled = !!ctx.oficialFeita;
     bOficial.addEventListener("click", () => marcarOficial(ctx, bOficial, msgOficial));
   }
@@ -987,7 +1007,7 @@ function problemasDoTime(titulares, ctx, extra) {
   const banco = roster ? bancoDoTime(roster, titulares).filter(id => ctx.players[id]).map(id => { idDe.set(ctx.players[id], id); return ctx.players[id]; }) : [];
   // com as médias (caça ao tank), as opções vêm com a média e a melhor primeiro
   const medDe = p => ctx.medias ? ctx.medias[idDe.get(p)] : null;
-  const livresPara = slot => banco.filter(p => cabeNoSlot(p, slot) && p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && est(p) === "early")
+  const livresPara = slot => banco.filter(p => cabeNoSlot(p, slot) && p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && antecipadoTravado(ctx.cal, p.team, ctx.semanaCal))
     && (s0 => !s0 || s0 === "Questionable")(ctx.statusDe ? ctx.statusDe(idDe.get(p), p) : p.injury_status)).sort((a, b) => ctx.medias ? (medDe(b) || 0) - (medDe(a) || 0) : 0);
   const opcaoTxt = p => !ctx.medias ? nomePosTime(p) : nomePosTime(p).replace(/\)$/, ", " + (medDe(p) != null ? "MÉDIA " + num(medDe(p)) : "SEM MÉDIA") + ")");
   const semOpcao = () => extra && extra.cap && !extra.temVaga ? " · SEM VAGA NO ELENCO PARA PEGAR ALGUÉM (LIGA CAP)" : " · SEM OPÇÃO NO BANCO, VEJA A WAIVER";
@@ -1005,7 +1025,7 @@ function problemasDoTime(titulares, ctx, extra) {
     const p = ctx.players[id]; if (!p) return;
     const nomeJ = nomeDe(p), pos = [p.position, p.team].filter(Boolean).join(" · ");
     const e = est(p);
-    if (e === "early" && ctx.ignorarAntecipados) return;
+    if (e === "early" && ctx.ignorarAntecipados && antecipadoTravado(ctx.cal, p.team, ctx.semanaCal)) return;
     let motivo;
     if (e === "semtime") motivo = " ESTÁ SEM TIME";
     else if (e === "bye") { if (ctx.semQbKBye && ehQbOuK(p)) return; motivo = " ESTÁ DE BYE"; }
@@ -1050,7 +1070,7 @@ async function rodarMeus() {
     const waiver = $("meusWaiver").checked ? { limiar: parseInt($("meusSnap").value, 10) || 30 } : null;
     const base = waiver ? await baseDaWaiver(temporada, semana, players, waiver, status) : null;
     const Ssem = await statsDaSemana(temporada, semana).catch(() => null);   // quem já entrou em campo nesta semana
-    const ctxG = { players, cal: st.cal, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked,
+    const ctxG = { players, cal: st.cal, semanaCal: st.semana, ignorarAntecipados: $("meusEarly").checked, mostrarQ: $("meusQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("meusMargemA").value, 10) || 3, margemDefesa: parseInt($("meusMargemD").value, 10) || 5 };
     const { cfg } = configMinhas(ativas);
     const resultado = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
@@ -1089,7 +1109,7 @@ async function rodarMeus() {
             // quem está OUT/IR/... já aparece na linha própria (com as opções do banco); aqui vai só a conta
             const validos = titulares.filter(id => {
               const p = players[id]; if (!p || p.team !== sigF) return false;
-              const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early";
+              const travou = ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana);
               const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable";
             }).length;
             const bye = (st.cal[sigF] || "normal") === "bye";
@@ -1102,14 +1122,14 @@ async function rodarMeus() {
             const sig = fq && ehFranq ? ABBR[fq] : null;
             let folga = Infinity;
             if (sig) {
-              const v = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early"; const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
+              const v = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const travou = ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana); const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
               folga = Math.max(0, v - minimo);
             }
             const falhas = [];
             const ant = await rodadasAnteriores(lg.league_id, semana - 1, falhas);
             if (falhas.length) { resultado.semMedias.push(lg.name); resultado.erroMedias = falhas[0]; }
             const medias = mediasDaLiga(ant.map(x => x || []));
-            const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
+            const noEscopo = p => !(ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana));
             sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, formacao: ligaFormacao(lg.name) }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
           }
           const cap = ligaCap(lg.name);
@@ -1334,7 +1354,7 @@ async function rodarPessoal() {
     // snap de defesa dos últimos jogos (o mesmo para todas as ligas): reserva de média alta que quase não joga não vira reserva forte
     const snapMin = parseInt($("pSnapDef").value, 10) || 0;
     const snapG = banco && snapMin > 0 && semana > 1 ? snapMedioIdp(await lerSemanasDoSnap(temporada, [semana]), semana, players) : null;
-    const ctxG = { players, cal: st.cal, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
+    const ctxG = { players, cal: st.cal, semanaCal: st.semana, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], semMedias: [], erroMedias: null, ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
       cfg, faltando, conferirFr, banco, waiver, erroProj, comProj: !!Pw, todas: ativas.map(l => ({ id: l.league_id, nome: l.name, ordem: posicao[l.league_id] })).sort((a, b) => a.ordem - b.ordem) };
@@ -1364,14 +1384,14 @@ async function rodarPessoal() {
         if (ligaSite && ligaSite.formacao && league) { const fm = avaliarFormacao(league, titulares, players); if (fm && !fm.ok) itens.unshift({ txt: descFormacao(fm), tipo: "warn" }); }
         let sig = fq ? ABBR[fq] : null, fr = null, folga = Infinity;
         if (sig) {
-          const v = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early"; const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
+          const v = titulares.filter(id => { const p = players[id]; if (!p || p.team !== sig) return false; const travou = ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana); const s2 = travou ? null : ctx.statusDe(id, p); return !s2 || s2 === "Questionable"; }).length;
           folga = Math.max(0, v - minimo);
         }
         if (ehFr) {
           if (!fq) itens.unshift({ txt: "NÃO IDENTIFIQUEI A SUA FRANQUIA NESTA LIGA: ESCOLHA EM \"MINHAS LIGAS FRANCHISE\"", tipo: "wo" });
           else {
             const daF = titulares.filter(id => players[id] && players[id].team === sig).map(id => {
-              const p = players[id]; const travou = ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early";
+              const p = players[id]; const travou = ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana);
               const s2 = travou ? null : ctx.statusDe(id, p);
               return { nome: nomeDe(p), status: s2, conta: !s2 || s2 === "Questionable" };
             });
@@ -1391,7 +1411,7 @@ async function rodarPessoal() {
           const ant = await rodadasAnteriores(lg.league_id, semana - 1, falhas);
           if (falhas.length) { res.semMedias.push(lg.name); res.erroMedias = falhas[0]; }
           const medias = mediasDaLiga(ant.map(x => x || []));
-          const noEscopo = p => !(ctx.ignorarAntecipados && (st.cal[p.team] || "normal") === "early");
+          const noEscopo = p => !(ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana));
           const proj = projecaoNaLiga(Pw, (league && league.scoring_settings) || {});
           sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, proj, snap: snapG, snapMin, formacao: ligaFormacao(lg.name) }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
@@ -1618,12 +1638,12 @@ async function rodarTank() {
         const mt = doTime(MT[semana - 1], r), tit = mt ? mt.starters : (r.starters || []);
         if (emEmpate(semana, calAgora, r.roster_id)) t.empate = true;
         else {
-          const ctx = { players, cal: calAgora, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
+          const ctx = { players, cal: calAgora, semanaCal: agoraW, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
             medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), snap: snapAte(semana), ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
             .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige || i.semTime ? "wo" : "warn", forte: !!(i.corrige || i.semTime) }));
           if (semana > 1) {
-            const noEscopo = p => !(ctx.ignorarAntecipados && (calAgora[p.team] || "normal") === "early");
+            const noEscopo = p => !(ctx.ignorarAntecipados && antecipadoTravado(calAgora, p.team, agoraW));
             const folga = folgaDe(tit, sig, i => { const x = ctx.statusDe(i, players[i]); return !x || x === "Questionable"; });
             sugestoesBanco(r, tit, { ...ctx, liga32, formacao }, mediasAte(semana), noEscopo, sig, folga, rp)
               .forEach(x => t.agora.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
@@ -2180,10 +2200,64 @@ async function carregarListaOficial(forcar) {
   atualizarSnapBox();
   if (st.grupo === "oficiais") { estadoOficiais(); redesenhar(); }
 }
+// Varredura antecipada em etapas (antecipados em dias diferentes): a nova troca só os times que ela conferiu
+// (jogos que ainda não tinham começado); os outros ficam como estavam na varredura oficial anterior.
+function mesclarOficial(velho, novo) {
+  const varridos = new Set(novo.timesVarridos || []);
+  const doVarrido = f => varridos.has(ABBR[f]);
+  const idsDe = x => { const o = new Set(); varridos.forEach(t => String(((x && x.times) || {})[t] || "").split(",").forEach(id => { if (id) o.add(id); })); return o; };
+  const ids = new Set([...idsDe(velho), ...idsDe(novo)]);
+  const s = {};
+  Object.entries(velho.s || {}).forEach(([id, v]) => { if (!ids.has(id)) s[id] = v; });
+  ids.forEach(id => { if ((novo.s || {})[id]) s[id] = novo.s[id]; });
+  const times = Object.assign({}, velho.times || {});
+  varridos.forEach(t => { if ((novo.times || {})[t] != null) times[t] = novo.times[t]; else delete times[t]; });
+  const flag = {};
+  new Set([...Object.keys(velho.flag || {}), ...Object.keys(novo.flag || {})]).forEach(lid => {
+    flag[lid] = [...((velho.flag || {})[lid] || []).filter(f => !doVarrido(f)), ...((novo.flag || {})[lid] || [])]; });
+  let reservas = null;
+  if (velho.reservas || novo.reservas) {
+    reservas = {};
+    new Set([...Object.keys(velho.reservas || {}), ...Object.keys(novo.reservas || {})]).forEach(lid => {
+      const m = {}; Object.entries((velho.reservas || {})[lid] || {}).forEach(([f, l]) => { if (!doVarrido(f)) m[f] = l; });
+      reservas[lid] = Object.assign(m, (novo.reservas || {})[lid] || {}); });
+  }
+  // etapas: refazer a mesma etapa (mesmos times) substitui a anterior em vez de repetir
+  const mesmo = (a, b) => !!(a && b) && a.length === b.length && a.every(x => b.includes(x));
+  const etapas = (velho.etapas || [{ quando: velho.quando, times: velho.timesVarridos || null }]).slice();
+  const refez = etapas.length > 1 && mesmo(etapas[etapas.length - 1].times, novo.timesVarridos || []);
+  if (refez) etapas.pop();
+  etapas.push({ quando: novo.quando, times: novo.timesVarridos || [] });
+  const ligasV = Object.fromEntries((velho.ligas || []).map(l => [l.id, l]));
+  const ligas = (novo.ligas || []).map(l => {
+    const v = ligasV[l.id]; if (!v) return l;
+    const partes = (v.partes || [{ quando: velho.quando, texto: v.texto }]).slice();
+    if (refez && partes.length > 1) partes.pop();
+    partes.push({ quando: novo.quando, texto: l.texto });
+    const m = { id: l.id, nome: l.nome, partes, texto: partes.map(x => x.texto).filter(Boolean).join("\n\n") };
+    if (v.abaixoFr && l.abaixoFr) {
+      const junta = k => [...(v[k] || []).filter(f => !doVarrido(f)), ...(l[k] || [])];
+      m.abaixoFr = junta("abaixoFr"); m.irregularFr = junta("irregularFr"); m.foraFr = junta("foraFr");
+      m.abaixo = m.abaixoFr.length; m.irregular = m.irregularFr.length; m.fora = m.foraFr.length;
+    } else { m.abaixo = (v.abaixo || 0) + (l.abaixo || 0); m.irregular = (v.irregular || 0) + (l.irregular || 0); m.fora = (v.fora || 0) + (l.fora || 0); }
+    return m;
+  });
+  (velho.ligas || []).forEach(v => { if (!ligas.some(l => l.id === v.id)) ligas.push(v); });
+  const out = Object.assign({}, novo, { s, times, flag, reservas, ligas, etapas, quando: etapas.map(e => e.quando).join(" + ") });
+  delete out.fonte; delete out.parcial;
+  out.timesVarridos = [...new Set([...(velho.timesVarridos || []), ...varridos])];
+  return out;
+}
 async function marcarOficial(ctx, b, msg) {
-  const reg = Object.assign({}, ctx.oficial, { salvoEm: new Date().toISOString(), quem: nomeComissario() });
-  guardarLocal(reg); atualizarSnapBox();
+  let reg = Object.assign({}, ctx.oficial, { salvoEm: new Date().toISOString(), quem: nomeComissario() });
   b.disabled = true; msg.textContent = ""; msg.className = "status";
+  if (reg.parcial) {
+    b.textContent = "Juntando à varredura anterior…";
+    const ant = (await snapOficial(reg.semana, reg.modo, reg.grupo)).snap;
+    if (ant) reg = Object.assign(mesclarOficial(ant, reg), { salvoEm: reg.salvoEm, quem: reg.quem });
+    else { delete reg.parcial; msg.textContent = "Não achei varredura antecipada anterior desta semana: ficou só esta."; }
+  }
+  guardarLocal(reg); atualizarSnapBox();
   if (!urlPlanilha()) { b.textContent = ctx.oficialFeita = "Varredura oficial guardada ✓"; return; }
   b.textContent = "Guardando na planilha…";
   try {
@@ -4666,6 +4740,12 @@ async function rodar() {
     const agora = new Date();
     const quando = agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const ctx = { modo: st.modo, semana, cal: st.cal, players, statusDe, quando, usandoSnap: snap ? snap.quando : null, outros: $("outros").checked, banco: $("banco").checked, margemAtaque: parseInt($("margemAtaque").value, 10) || 3, margemDefesa: parseInt($("margemDefesa").value, 10) || 5 };
+    // antecipados em dias diferentes: o que já começou fica de fora e mantém a varredura oficial anterior
+    const agoraMs = agora.getTime(), antecipados = Object.keys(st.cal).filter(t => st.cal[t] === "early");
+    const comecados = modo === "early" ? antecipados.filter(t => jaComecou(semana, t, agoraMs)) : [];
+    if (modo === "early" && antecipados.length && comecados.length === antecipados.length) { status("Todos os jogos antecipados da semana " + semana + " já começaram: a varredura antecipada não tem mais o que conferir. Use a de sábado.", true); return; }
+    ctx.jaComecou = modo === "early" ? (sig => jaComecou(semana, sig, agoraMs)) : null;
+    ctx.comecados = comecados; ctx.varridos = modo === "early" ? antecipados.filter(t => !comecados.includes(t)) : null;
     const resultados = [];
     let feitas = 0;
     await Promise.all(ligas.map(async (liga) => {
@@ -4693,15 +4773,19 @@ async function rodar() {
       const flag = {}; resultados.forEach(r => { flag[r.liga.id] = r.times.filter(t => t.abaixo || t.irregular).map(t => t.franquia); });
       let reservas = null;
       if (ctx.banco) { reservas = {}; resultados.forEach(r => { const m = {}; r.times.forEach(t => { if (t.reservas && t.reservas.length) m[t.franquia] = t.reservas.map(x => ({ id: x.id, nome: x.nome, media: x.media, tit: x.tit, mediaTit: x.mediaTit })); }); reservas[r.liga.id] = m; }); }
+      const frs = (r, f) => r.times.filter(f).map(t => t.franquia);
       const ligasMsg = resultados.map(r => ({ id: r.liga.id, nome: r.liga.nome, texto: r.erro ? "" : mensagem(r, ctx),
-        abaixo: r.times.filter(t => t.abaixo).length, irregular: r.times.filter(t => !t.abaixo && t.irregular).length, fora: r.times.filter(t => t.foraFormacao).length }));
+        abaixo: r.times.filter(t => t.abaixo).length, irregular: r.times.filter(t => !t.abaixo && t.irregular).length, fora: r.times.filter(t => t.foraFormacao).length,
+        abaixoFr: frs(r, t => t.abaixo), irregularFr: frs(r, t => !t.abaixo && t.irregular), foraFr: frs(r, t => t.foraFormacao) }));
       const gN = GRUPOS.find(x => x.id === grupo); const temporada = temporadaAtual();
       ctx.oficial = { v: 1, id: idOficial(temporada, semana, modo, grupo), temporada, semana, modo, grupo, grupoNome: gN ? gN.nome : grupo,
         quando, s, flag, reservas, ligas: ligasMsg, times: timesSnap };
+      if (modo === "early") { ctx.oficial.timesVarridos = ctx.varridos; if (comecados.length) ctx.oficial.parcial = true; }
     }
     st.res[grupo] = { tipo: "varredura", resultados, ctx }; st.filtro[grupo] = null;
     if (st.grupo === grupo) desenharResultado(resultados, ctx);
-    status("Pronto. " + quando + ".");
+    const nomesSig = l => juntar(l.map(t => NOME_POR_SIGLA[t] || t).sort()).replace(/ E /, " e ");
+    status("Pronto. " + quando + "." + (comecados.length ? " Jogos que já começaram ficaram de fora (vale a varredura anterior): " + nomesSig(comecados) + "." : ""));
   } catch (e) {
     status("Não consegui falar com o Sleeper: " + e.message + ". Verifique a internet e tente de novo.", true);
   } finally { btn.disabled = false; }
@@ -5007,8 +5091,9 @@ if (!liberado()) st.grupo = "meus";
 desenharAbas();
 desenharLigas();
 const dia = new Date().getDay(); // 2 = terça, 3 = quarta, 4 = quinta, 5 = sexta
-setModo(dia === 4 || dia === 5 ? "early" : dia === 2 || dia === 3 ? "terca" : "dom");
-$("meusEarly").checked = !(dia === 3 || dia === 4);   // quarta/quinta: ainda vale olhar o jogo de quinta
+setModo(dia === 4 || dia === 5 || (dia === 3 && antecipadoEmBreve()) ? "early" : dia === 2 || dia === 3 ? "terca" : "dom");
+// quarta/quinta: ainda vale olhar o jogo de quinta; nas semanas com o horário de cada antecipado, ignora só o que já começou
+$("meusEarly").checked = horarioAntecipadosAgora() || !(dia === 3 || dia === 4);
 $("pEarly").checked = $("meusEarly").checked;
 setSemana(1);
 atualizarEstadoNfl();
