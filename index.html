@@ -257,7 +257,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
       <label class="op"><input id="pFranq" type="checkbox" checked> <span>Conferir as franchises nas minhas ligas franchise (a lista fica em "Minhas ligas franchise", no fim do resultado)</span></label>
       <label class="op"><input id="pBanco" type="checkbox" checked> <span>Reservas fortes: média maior que a do titular da vaga em pelo menos
         <select id="pMargemA" aria-label="Diferença mínima no ataque"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option><option value="8">8</option></select> pontos no ataque e <select id="pMargemD" aria-label="Diferença mínima na defesa"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option><option value="10">10</option></select> na defesa (lê as semanas anteriores; demora um pouco mais).
-        No ataque, igual ao tank, só aponta se o reserva também estiver projetado acima do titular nesta semana (projeção do Sleeper na pontuação da liga).
+        No ataque, igual ao tank, só aponta se o reserva também estiver projetado acima do titular nesta semana (projeção do Sleeper na pontuação da liga) e não aponta quem perdeu snap sem lesão (2 jogos seguidos abaixo de 50% e bem abaixo do que jogava antes, como um TE reserva com o titular de volta).
         Na defesa, o reserva também precisa ter jogado pelo menos
         <select id="pSnapDef" aria-label="Snap mínimo do reserva na defesa"><option value="0">0</option><option value="40">40</option><option value="50" selected>50</option><option value="60">60</option><option value="70">70</option></select>%
         dos snaps, em média, nos últimos 4 jogos do time (jogo em que não entrou conta 0): reserva de média alta que só entrou em um ou outro jogo não aparece. Vale também para o tank.
@@ -323,7 +323,7 @@ ul.lst li .marca { float: right; display: inline-flex; gap: 4px; align-items: ce
   <section id="resultado" aria-live="polite"></section>
   <p class="foot" style="margin-top:20px"><button id="bloquear" class="btn ghost" type="button" hidden>Bloquear a área dos comissários neste aparelho</button></p>
   <p class="foot" style="margin-top:28px">Contam: titulares do time da NFL da franquia sem status ou Questionable. Não contam: Out, IR, Doubtful, Sus, NA, DNR, PUP. Franquia de bye fica isenta. O mínimo de cada liga aparece no cartão dela (7 na maioria; 6 na Jalen Reagor, John Randle, Cap e AFC/NFC; 8 na XFL, Sonserina e Lufa Lufa). Jogadores de jogos que já aconteceram nesta semana ficam fora da varredura de sábado.</p>
-  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 25/11/2026 a (antecipados em etapas: quarta, Ação de Graças e sexta)</p>
+  <p class="foot" id="versao" style="margin-top:6px">Versão do site: 26/11/2026 a (tank: reserva que perdeu snap sem lesão não é boa opção)</p>
 </div>
 
 <script>
@@ -1007,9 +1007,11 @@ function problemasDoTime(titulares, ctx, extra) {
   const banco = roster ? bancoDoTime(roster, titulares).filter(id => ctx.players[id]).map(id => { idDe.set(ctx.players[id], id); return ctx.players[id]; }) : [];
   // com as médias (caça ao tank), as opções vêm com a média e a melhor primeiro
   const medDe = p => ctx.medias ? ctx.medias[idDe.get(p)] : null;
+  // perdeu snap sem lesão (tank): ainda serve para não deixar a vaga sem ninguém, mas vai por último e só com o nome
+  const perdeu = p => !!(ctx.perdeuSnap && ctx.perdeuSnap(idDe.get(p)));
   const livresPara = slot => banco.filter(p => cabeNoSlot(p, slot) && p.team && est(p) !== "bye" && !(ctx.ignorarAntecipados && antecipadoTravado(ctx.cal, p.team, ctx.semanaCal))
-    && (s0 => !s0 || s0 === "Questionable")(ctx.statusDe ? ctx.statusDe(idDe.get(p), p) : p.injury_status)).sort((a, b) => ctx.medias ? (medDe(b) || 0) - (medDe(a) || 0) : 0);
-  const opcaoTxt = p => !ctx.medias ? nomePosTime(p) : nomePosTime(p).replace(/\)$/, ", " + (medDe(p) != null ? "MÉDIA " + num(medDe(p)) : "SEM MÉDIA") + ")");
+    && (s0 => !s0 || s0 === "Questionable")(ctx.statusDe ? ctx.statusDe(idDe.get(p), p) : p.injury_status)).sort((a, b) => (perdeu(a) - perdeu(b)) || (ctx.medias ? (medDe(b) || 0) - (medDe(a) || 0) : 0));
+  const opcaoTxt = p => !ctx.medias || perdeu(p) ? nomePosTime(p) : nomePosTime(p).replace(/\)$/, ", " + (medDe(p) != null ? "MÉDIA " + num(medDe(p)) : "SEM MÉDIA") + ")");
   const semOpcao = () => extra && extra.cap && !extra.temVaga ? " · SEM VAGA NO ELENCO PARA PEGAR ALGUÉM (LIGA CAP)" : " · SEM OPÇÃO NO BANCO, VEJA A WAIVER";
   if (!roster) { const vazios = titulares.filter(id => !id || id === "0").length; if (vazios) itens.push({ txt: vazios + (vazios > 1 ? " SPOTS VAZIOS" : " SPOT VAZIO"), tipo: "wo" }); }
   titulares.forEach((id, i) => {
@@ -1354,6 +1356,8 @@ async function rodarPessoal() {
     // snap de defesa dos últimos jogos (o mesmo para todas as ligas): reserva de média alta que quase não joga não vira reserva forte
     const snapMin = parseInt($("pSnapDef").value, 10) || 0;
     const snapG = banco && snapMin > 0 && semana > 1 ? snapMedioIdp(await lerSemanasDoSnap(temporada, [semana]), semana, players) : null;
+    // ataque: reserva que perdeu snap sem lesão não é reserva forte (igual ao tank)
+    const perdeuG = banco && semana > 2 ? perdeuSnapAtaque(await lerSemanasSnapAtq(temporada, [{ w: semana, encerrada: false }]), players, semana, false) : null;
     const ctxG = { players, cal: st.cal, semanaCal: st.semana, ignorarAntecipados: $("pEarly").checked, mostrarQ: $("pQ").checked,
       statusDe: statusDaSemana(jaEntrouEmCampo(Ssem, null)), margemAtaque: parseInt($("pMargemA").value, 10) || 3, margemDefesa: parseInt($("pMargemD").value, 10) || 5 };
     const res = { usuario: u.display_name || usuario, semana, ligas: [], semTime: [], erros: [], semMedias: [], erroMedias: null, ignoradas, foraTemporada: ligas.length - ativas.length - ignoradas.length,
@@ -1413,7 +1417,7 @@ async function rodarPessoal() {
           const medias = mediasDaLiga(ant.map(x => x || []));
           const noEscopo = p => !(ctx.ignorarAntecipados && antecipadoTravado(st.cal, p.team, st.semana));
           const proj = projecaoNaLiga(Pw, (league && league.scoring_settings) || {});
-          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, proj, snap: snapG, snapMin, formacao: ligaFormacao(lg.name) }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
+          sugestoesBanco(meu, titulares, { ...ctx, liga32: rosters.length >= 32, proj, snap: snapG, snapMin, perdeuSnap: perdeuG, formacao: ligaFormacao(lg.name) }, medias, noEscopo, sig, folga, league && league.roster_positions).forEach(x => itens.push({ txt: "🔍 RESERVA FORTE: " + x.txt, tipo: "warn", banco: true }));
         }
         const wv = base && base.semanas.length && (!cap || temVaga) ? opcoesWaiver(base, league, rosters, players) : null;   // liga cap: só com vaga livre no elenco
         res.ligas.push({ nome: lg.name, id: lg.league_id, ordem: posicao[lg.league_id], itens, fr, ehFr, waiver: wv, camp });
@@ -1612,6 +1616,10 @@ async function rodarTank() {
     // snap de defesa dos 4 jogos antes de cada semana (reserva de média alta que quase não joga não vira reserva forte)
     const SN = margens.snapMin > 0 ? await lerSemanasDoSnap(temporada, [...feitas, ...(agoraW ? [agoraW] : [])]) : {};
     const SNP = {}, snapAte = w => margens.snapMin > 0 && w > 1 ? (SNP[w] = SNP[w] || snapMedioIdp(SN, w, players)) : null;
+    // snap de ataque de cada semana: quem perdeu snap sem lesão não é boa opção de banco
+    status("Lendo os snaps de ataque…");
+    const SA = await lerSemanasSnapAtq(temporada, [...feitas.map(w => ({ w, encerrada: true })), ...(agoraW ? [{ w: agoraW, encerrada: false }] : [])]);
+    const PSN = {}, perdeuAte = (w, enc) => w > 1 ? (PSN[w + (enc ? "e" : "a")] = PSN[w + (enc ? "e" : "a")] || perdeuSnapAtaque(SA, players, w, enc)) : null;
     const byUser = {}; (users || []).forEach(u => { byUser[u.user_id] = u; });
     const doTime = (ms, r) => (ms || []).find(x => x && x.roster_id === r.roster_id && Array.isArray(x.starters) && x.starters.length);
     // liga de empate na bye: o confronto em que um dos dois está com a franquia de bye é empate para os dois (escalando ou não)
@@ -1639,7 +1647,7 @@ async function rodarTank() {
         if (emEmpate(semana, calAgora, r.roster_id)) t.empate = true;
         else {
           const ctx = { players, cal: calAgora, semanaCal: agoraW, ignorarAntecipados: $("pEarly").checked, mostrarQ: false, statusDe: statusDaSemana(jaEntrouEmCampo(Sagora, mt && mt.players_points)), semQbKBye: liga32,
-            medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), snap: snapAte(semana), ...margens };
+            medias: semana > 1 ? mediasAte(semana) : null, proj: projDe(semana), snap: snapAte(semana), perdeuSnap: perdeuAte(semana, false), ...margens };
           problemasDoTime(tit, ctx, { roster: r, rp, cap: ligaCap(league.name), temVaga: temVagaNoElenco(r, league) })
             .forEach(i => t.agora.push({ txt: i.txt, pos: i.pos, tipo: i.corrige || i.semTime ? "wo" : "warn", forte: !!(i.corrige || i.semTime) }));
           if (semana > 1) {
@@ -1668,24 +1676,27 @@ async function rodarTank() {
           const bye = !vazio && p.team && (cal[p.team] || "normal") === "bye";
           if (bye && liga32 && ehQbOuK(p)) return;   // liga de 32: QB e kicker de bye são inevitáveis
           if (!vazio) semJogo.add(sid);
-          // opção de verdade: cabe na vaga, jogou e pontuou; jogo antecipado (quinta) não conta para titular de domingo, que pode ter caído depois
+          // opção: cabe na vaga e jogou; jogo antecipado (quinta) não conta para titular de domingo, que pode ter caído depois.
+          // Primeiro quem pontuou e não perdeu snap; quem perdeu snap sem lesão ou zerou ainda serve para a vaga não ficar sem ninguém (só o nome)
           const cedo = id => (cal[(players[id] || {}).team] || "normal") === "early";
-          const opc = banco.filter(b => !usados.has(b) && players[b] && cabeNoSlot(players[b], slot) && jogouNaSemana(S, b, players[b], cal) && (pp[b] || 0) > 0
+          const perdeuW = perdeuAte(w, true);
+          const fraco = b => !((pp[b] || 0) > 0) || !!(perdeuW && perdeuW(b));
+          const opc = banco.filter(b => !usados.has(b) && players[b] && cabeNoSlot(players[b], slot) && jogouNaSemana(S, b, players[b], cal)
               && (vazio || !cedo(b) || cedo(sid)))
-            .sort((a, b) => (pp[b] || 0) - (pp[a] || 0));
+            .sort((a, b) => (fraco(a) - fraco(b)) || ((pp[b] || 0) - (pp[a] || 0)));
           const quem = vazio ? "SPOT VAZIO (" + (SLOT_NOME[slot] || slot) + ")" : nomeDe(p) + (bye ? " ESTAVA DE BYE" : " NÃO JOGOU");
           const pos = p ? [p.position, p.team].filter(Boolean).join(" · ") : "";
           // com opção no banco, a posição e o time do titular vão junto do nome dele (no fim ficariam parecendo ser do reserva)
           const quemPT = vazio ? quem : nomePosTime(p) + (bye ? " ESTAVA DE BYE" : " NÃO JOGOU");
           if (opc.length) usados.add(opc[0]);
           if (!mostra) return;
-          if (opc.length) t.antes.push({ w, txt: "S" + w + ": " + quemPT + " · NO BANCO JOGOU " + nomePosTime(players[opc[0]]) + " · FEZ " + num(pp[opc[0]] || 0) + " PTS · " + txtMedia(opc[0], w), tipo: "wo", forte: true });
+          if (opc.length) t.antes.push({ w, txt: "S" + w + ": " + quemPT + " · NO BANCO JOGOU " + nomePosTime(players[opc[0]]) + (fraco(opc[0]) ? "" : " · FEZ " + num(pp[opc[0]] || 0) + " PTS · " + txtMedia(opc[0], w)), tipo: "wo", forte: true });
           else if (vazio) t.antes.push({ w, txt: "S" + w + ": " + quem + " · SEM OPÇÃO NO BANCO", tipo: "warn" });
           else if (semJogoAntes.has(sid)) t.antes.push({ w, txt: "S" + w + ": " + nomeDe(p) + " FICOU SEM JOGAR DE NOVO E SEGUIU TITULAR · SEM OPÇÃO NO BANCO", pos, tipo: "warn" });
         });
         semJogoAntes = semJogo;
         if (mostra && w > 1) {
-          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, formacao, proj: projDe(w), snap: snapAte(w), ...margens };
+          const ctxW = { players, cal, statusDe: i => jogouNaSemana(S, i, players[i], cal) ? null : "NA", liga32, formacao, proj: projDe(w), snap: snapAte(w), perdeuSnap: perdeuAte(w, true), ...margens };
           const folga = folgaDe(tit, sig, i => jogouNaSemana(S, i, players[i], cal));
           const rs = sugestoesBanco({ players: [...tit, ...banco], reserve: [], taxi: [] }, tit, ctxW, mediasAte(w), () => true, sig, folga, rp);
           // quanto o reserva fez naquela semana (e o titular que ficou no lugar dele)
@@ -1767,10 +1778,11 @@ function desenharTank(t) {
     (t.feitas.length ? "nas semanas que já acabaram, titular que não jogou (ou spot vazio) enquanto alguém que cabia na vaga jogou no banco." : "").replace(/; $/, "."),
     "Amarelo = sinal leve: sem opção no banco, titular que ficou sem jogar duas semanas seguidas, ou reserva com média " + t.margens.margemAtaque + " pontos (ataque) ou " + t.margens.margemDefesa + " (defesa) acima do titular da vaga" +
     (t.comProj ? "; no ataque, só quando o reserva também estava projetado acima do titular naquela semana (projeção do Sleeper na pontuação da liga, PROJ): titular de média baixa mas bem projetado, como uma estrela em fase ruim, não conta" : "") +
+    "; no ataque, reserva que perdeu snap sem lesão (2 jogos seguidos abaixo de 50% dos snaps e bem abaixo do que jogava antes, como um TE reserva com o titular de volta) não conta, mesmo com média boa" +
     (t.margens.snapMin ? "; na defesa, só quando o reserva jogou pelo menos " + t.margens.snapMin + "% dos snaps, em média, nos 4 jogos do time antes daquela semana (SNAP; jogo em que não entrou conta 0): reserva na NFL que entrou em um ou outro jogo não conta." : "."),
     "Para copiar só alguns times, marque a caixa no canto de cada um e use \"Copiar marcados\"; \"Copiar\" no card copia só aquele time."];
-  if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + rotSemanas(t.feitas).toLowerCase() + "); a opção do banco tem que ter pontuado, e reserva de jogo antecipado não conta para titular de domingo. Lesão em cima da hora também aparece; o que pesa é repetir.",
-    "Para cada opção do banco aparece quanto ela fez na semana e a média dela nas semanas anteriores (o que o GM sabia na hora; sem média = menos de 2 jogos pontuando).");
+  if (t.feitas.length) regra.push("Nas semanas que já acabaram o site não sabe o status de lesão daquela hora, então conta quem jogou (" + rotSemanas(t.feitas).toLowerCase() + "); a opção do banco tem que ter jogado, e reserva de jogo antecipado não conta para titular de domingo. Opção que zerou ou que perdeu snap sem lesão aparece só com o nome, sem pontos nem média: ela só mostra que a vaga não precisava ficar sem ninguém. Lesão em cima da hora também aparece; o que pesa é repetir.",
+    "Para cada opção do banco que pontuou aparece quanto ela fez na semana e a média dela nas semanas anteriores (o que o GM sabia na hora; sem média = menos de 2 jogos pontuando).");
   if (!t.acabou) regra.push("A semana " + t.semana + " ainda não acabou: cada time pode mexer até o jogo de cada jogador, então ela só vale de verdade depois que os jogos travarem. Quem já entrou em campo nela (snap ou pontos) não é acusado, mesmo que esteja OUT agora: foi lesão durante o jogo.");
   if (t.ignorouEarly) regra.push("Jogadores dos jogos antecipados desta semana ficaram de fora (opção marcada acima).");
   box.appendChild(el("p", { class: "foot", text: regra.join(" ") }));
@@ -2502,6 +2514,43 @@ function snapMedioIdp(SN, w, players) {
     return (memo[id] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null);
   };
 }
+// Ataque: quem perdeu snap sem lesão (papel menor no time) não é boa opção de banco. Ex.: Mo Alie-Cox, 67% dos snaps sem o
+// Tyler Warren e 26% e 22% com ele de volta: a média boa vinha das semanas em que jogava mais.
+// Snap = % dos snaps de ataque do time no jogo; só contam os jogos em que ele entrou (jogo sem entrar pode ter sido lesão).
+// Jogo "baixo": abaixo de 50% e até 70% da média dos jogos anteriores dele (de quem tinha papel, pelo menos 30%).
+// Perdeu snap = 2 jogos seguidos baixos; um jogo só costuma ser lesão no jogo ou jogo atípico (o Kelce teve 31% na S10 e voltou).
+// Semana encerrada: a própria semana com a anterior ou a seguinte; semana em andamento: os 2 últimos jogos.
+const SNAP_BAIXO = 0.7, SNAP_TETO = 50, SNAP_PAPEL = 30, SNAP_BASE = 8;
+const snapAtq = (S, id) => { const v = S && S[id]; return v && v.tm_off_snp && v.off_snp > 0 ? Math.min(100, 100 * v.off_snp / v.tm_off_snp) : null; };
+const semanasSnapAtq = (w, encerrada) => { const a = []; for (let k = w - 1; k >= Math.max(1, w - 12); k--) a.push(k); if (encerrada) a.push(w, w + 1, w + 2); return a; };
+function perdeuSnapAtaque(SA, players, w, encerrada) {
+  const memo = {}, media = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const baixo = (x, b) => x != null && b.length >= 2 && media(b) >= SNAP_PAPEL && x < SNAP_TETO && x <= SNAP_BAIXO * media(b);
+  return id => {
+    if (id in memo) return memo[id];
+    const p = players[id];
+    if (!p || ehIdp(p) || !posDe(p).some(x => ["RB", "WR", "TE"].includes(x))) return (memo[id] = false);
+    const antes = []; for (let k = w - 1; k >= 1 && antes.length < SNAP_BASE + 2; k--) { const v = snapAtq(SA[k], id); if (v != null) antes.push(v); }
+    let r;
+    if (encerrada) {
+      const ref = snapAtq(SA[w], id);
+      let prox = null; for (let k = w + 1; k <= w + 2 && SA[k] && prox == null; k++) prox = snapAtq(SA[k], id);
+      const bA = antes.slice(1, SNAP_BASE + 1), bB = antes.slice(0, SNAP_BASE);
+      r = (baixo(ref, bA) && baixo(antes[0], bA)) || (baixo(ref, bB) && baixo(prox, bB));
+    } else {
+      const b = antes.slice(2, SNAP_BASE + 2);
+      r = baixo(antes[0], b) && baixo(antes[1], b);
+    }
+    return (memo[id] = !!r);
+  };
+}
+// ws: [{ w, encerrada }]; estatísticas das semanas que o critério acima precisa (ficam guardadas na sessão)
+async function lerSemanasSnapAtq(temporada, ws) {
+  const SA = {};
+  const ks = [...new Set(ws.flatMap(x => semanasSnapAtq(x.w, x.encerrada)))].filter(k => k >= 1 && k <= 18);
+  await Promise.all(ks.map(async k => { try { const S = await statsDaSemana(temporada, k); if (S && Object.keys(S).length) SA[k] = S; } catch (e) {} }));
+  return SA;
+}
 async function lerSemanasDoSnap(temporada, ws) {
   const SN = {};
   await Promise.all([...new Set(ws.flatMap(semanasDoSnap))].map(async k => { try { SN[k] = await statsDaSemana(temporada, k); } catch (e) {} }));
@@ -2646,6 +2695,8 @@ function sugestoesBanco(r, titulares, ctx, medias, noEscopo, sig, folga = 0, rp 
       if (!cabe || medias[bId] < medias[sId] + margem) continue;
       // ataque com projeção (tank): titular de média baixa mas projetado igual ou acima do reserva não é absurdo (ex.: estrela em fase ruim)
       if (ataque && ctx.proj) { const ps = ctx.proj(sId), pb = ctx.proj(bId); if (ps != null && pb != null && ps >= pb) continue; }
+      // ataque: reserva que perdeu snap sem lesão (papel menor no time) não é reserva forte, mesmo com média boa
+      if (ataque && ctx.perdeuSnap && ctx.perdeuSnap(bId)) continue;
       // defesa com snap: reserva de média alta que só entrou em um ou outro jogo (reserva na NFL) não conta
       if (!ataque && ctx.snap) { const sb = ctx.snap(bId); if (sb != null && sb < (ctx.snapMin ?? 50)) continue; }
       // liga com formação defensiva: o reserva tem que ter a mesma posição do FBB do titular (híbrido vale as duas)
